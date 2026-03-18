@@ -12,6 +12,7 @@ export interface CameraRecord {
   status: CameraStatus;
   quality: 'HD' | 'FHD' | '4K';
   image: string;
+  streamUrl: string;
   description: string;
   updatedAt: string;
 }

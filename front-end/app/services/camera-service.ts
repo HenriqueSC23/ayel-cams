@@ -20,6 +20,7 @@ export interface CreateCameraInput {
   location: string;
   category: string;
   description: string;
+  streamUrl?: string;
   access: 'public' | 'restricted';
   status: 'live' | 'offline';
   quality: 'HD' | 'FHD' | '4K';
@@ -32,6 +33,7 @@ export interface UpdateCameraInput {
   location?: string;
   category?: string;
   description?: string;
+  streamUrl?: string;
   access?: 'public' | 'restricted';
   status?: 'live' | 'offline';
   quality?: 'HD' | 'FHD' | '4K';

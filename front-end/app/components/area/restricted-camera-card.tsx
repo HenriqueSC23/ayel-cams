@@ -9,9 +9,10 @@ import { cn } from '../ui/utils';
 interface RestrictedCameraCardProps {
   camera: CameraRecord;
   viewMode?: ViewMode;
+  onWatch?: (camera: CameraRecord) => void;
 }
 
-export function RestrictedCameraCard({ camera, viewMode = 'grid' }: RestrictedCameraCardProps) {
+export function RestrictedCameraCard({ camera, viewMode = 'grid', onWatch }: RestrictedCameraCardProps) {
   const statusTone = camera.status === 'live' ? 'bg-[#3b3b3dcc] text-white' : 'bg-[#3c434fcc] text-white';
   const statusDot = camera.status === 'live' ? 'bg-[#ff4040]' : 'bg-[#a7b5ca]';
 
@@ -79,9 +80,11 @@ export function RestrictedCameraCard({ camera, viewMode = 'grid' }: RestrictedCa
           <span className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[#6d84a0]">{camera.category}</span>
           <motion.button
             type="button"
+            onClick={() => onWatch?.(camera)}
+            disabled={camera.status === 'offline' || !camera.streamUrl}
             whileTap={{ scale: 0.97 }}
             transition={motionTransitions.pressSpring}
-            className="group/assistir relative inline-flex h-10 items-center justify-center gap-1.5 overflow-hidden rounded-full border border-[#d7e0ea] bg-white px-4 text-[13px] font-semibold text-[#35506f] transition hover:border-[#159dde] hover:text-white"
+            className="group/assistir relative inline-flex h-10 items-center justify-center gap-1.5 overflow-hidden rounded-full border border-[#d7e0ea] bg-white px-4 text-[13px] font-semibold text-[#35506f] transition hover:border-[#159dde] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
             aria-label={`Visualizar stream da camera ${camera.name}`}
           >
             <span className="absolute inset-0 origin-left scale-x-0 bg-[#159dde] transition-transform duration-300 ease-out group-hover/assistir:scale-x-100" />

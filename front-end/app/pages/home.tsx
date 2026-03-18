@@ -5,11 +5,11 @@ import { useNavigate } from 'react-router';
 import { useAuth } from '../auth/auth-context';
 import { HomeCameraCard } from '../components/home/home-camera-card';
 import { ImageWithFallback } from '../components/figma/image-with-fallback';
+import { CameraWatchDialog } from '../components/platform/camera-watch-dialog';
 import { FilterChips } from '../components/platform/filter-chips';
 import { PageHeader } from '../components/platform/page-header';
 import { RequestStatePanel } from '../components/platform/request-state-panel';
 import { SurfacePanel } from '../components/platform/surface-panel';
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../components/ui/dialog';
 import { fallbackPublicCameras } from '../data/fallback-cameras';
 import { filterCameraRecords, publicCameraFilters, type CameraRecord, type ViewMode } from '../data/platform';
 import { createStaggerContainer, motionTransitions, motionVariants } from '../lib/motion-presets';
@@ -17,7 +17,6 @@ import { getCamerasRequest } from '../services/camera-service';
 import { getRequestErrorMessage, isNetworkRequestError } from '../services/request-error';
 
 const homeCameraOrder = ['cam-001', 'cam-002', 'cam-003', 'cam-004', 'cam-005'] as const;
-const DEMO_STREAM_URL = 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4';
 const MIN_REFRESH_FEEDBACK_MS = 900;
 const gridStaggerVariants = createStaggerContainer({ staggerChildren: 0.05 });
 
@@ -265,7 +264,7 @@ export function Home() {
                                 <motion.button
                                   type="button"
                                   onClick={() => setWatchingCamera(camera)}
-                                  disabled={camera.status === 'offline'}
+                                  disabled={camera.status === 'offline' || !camera.streamUrl}
                                   whileTap={{ scale: 0.97 }}
                                   transition={motionTransitions.pressSpring}
                                   className="group/assistir relative inline-flex h-10 items-center justify-center gap-2 overflow-hidden rounded-full border border-[#d7e0ea] bg-white px-5 text-sm font-semibold text-[#35506f] transition hover:border-[#159dde] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
@@ -288,36 +287,7 @@ export function Home() {
         </AnimatePresence>
       </div>
 
-      <Dialog open={Boolean(watchingCamera)} onOpenChange={(isOpen) => (!isOpen ? setWatchingCamera(null) : undefined)}>
-        <DialogContent className="max-w-[920px] overflow-hidden rounded-[24px] border border-[#d8e2ec] bg-white p-0 shadow-[0_14px_28px_rgba(15,23,42,0.18)]">
-          <div className="border-b border-[#e8eef5] p-6">
-            <DialogTitle className="text-[26px] font-semibold tracking-[-0.03em] text-[#002a52]">{watchingCamera?.name || 'Transmissao'}</DialogTitle>
-            <DialogDescription className="mt-1 text-[15px] font-medium text-[#58708e]">{watchingCamera?.location || ''}</DialogDescription>
-          </div>
-
-          <motion.div className="space-y-3 p-6" variants={motionVariants.fadeUp} initial="initial" animate="animate" exit="exit" transition={motionTransitions.enter}>
-            {watchingCamera?.status === 'live' ? (
-              <div className="overflow-hidden rounded-[16px] border border-[#d8e2ec] bg-black">
-                <video
-                  className="aspect-video w-full"
-                  src={DEMO_STREAM_URL}
-                  poster={watchingCamera?.image}
-                  controls
-                  autoPlay
-                  muted
-                  playsInline
-                  loop
-                />
-              </div>
-            ) : (
-              <div className="flex aspect-video items-center justify-center rounded-[16px] border border-[#d8e2ec] bg-slate-100 text-sm font-medium text-[#5f7289]">
-                Camera offline no momento.
-              </div>
-            )}
-            <p className="text-xs text-[#7f95ac]">Transmissao demonstrativa do modo lista da pagina inicial.</p>
-          </motion.div>
-        </DialogContent>
-      </Dialog>
+      <CameraWatchDialog camera={watchingCamera} onClose={() => setWatchingCamera(null)} />
     </div>
   );
 }

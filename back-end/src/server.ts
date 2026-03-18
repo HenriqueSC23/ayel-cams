@@ -652,6 +652,7 @@ app.post('/cameras', requireAuth, requireAdmin, (req, res) => {
   const description = typeof req.body?.description === 'string' ? req.body.description.trim() : '';
   const unit = typeof req.body?.unit === 'string' && req.body.unit.trim().length > 0 ? req.body.unit.trim() : 'Matriz';
   const image = typeof req.body?.image === 'string' ? req.body.image.trim() : '';
+  const streamUrl = typeof req.body?.streamUrl === 'string' ? req.body.streamUrl.trim() : '';
   const access = parseCameraAccess(req.body?.access);
   const status = parseCameraStatus(req.body?.status);
   const quality = parseQuality(req.body?.quality);
@@ -673,6 +674,7 @@ app.post('/cameras', requireAuth, requireAdmin, (req, res) => {
     quality,
     unit,
     image: image || undefined,
+    streamUrl: streamUrl || undefined,
   });
 
   res.status(201).json({ item: createdCamera });
@@ -701,6 +703,7 @@ app.patch('/cameras/:cameraId', requireAuth, requireAdmin, (req, res) => {
     quality?: 'HD' | 'FHD' | '4K';
     description?: string;
     image?: string;
+    streamUrl?: string;
   } = {};
 
   if (hasBodyField(req.body, 'name')) {
@@ -753,6 +756,14 @@ app.patch('/cameras/:cameraId', requireAuth, requireAdmin, (req, res) => {
       return;
     }
     updatePayload.image = req.body.image.trim();
+  }
+
+  if (hasBodyField(req.body, 'streamUrl')) {
+    if (typeof req.body?.streamUrl !== 'string') {
+      res.status(422).json({ message: 'URL de stream invalida.' });
+      return;
+    }
+    updatePayload.streamUrl = req.body.streamUrl.trim();
   }
 
   if (hasBodyField(req.body, 'access')) {

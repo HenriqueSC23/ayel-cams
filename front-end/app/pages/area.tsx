@@ -6,6 +6,7 @@ import { useAuth } from '../auth/auth-context';
 import { RestrictedCameraCard } from '../components/area/restricted-camera-card';
 import { ImageWithFallback } from '../components/figma/image-with-fallback';
 import { FilterChips } from '../components/platform/filter-chips';
+import { CameraWatchDialog } from '../components/platform/camera-watch-dialog';
 import { PageHeader } from '../components/platform/page-header';
 import { PillBadge } from '../components/platform/pill-badge';
 import { PlatformSelect } from '../components/platform/platform-select';
@@ -45,6 +46,7 @@ export function Area() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [reloadKey, setReloadKey] = useState(0);
+  const [watchingCamera, setWatchingCamera] = useState<CameraRecord | null>(null);
   const refreshStartedAtRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -296,7 +298,7 @@ export function Area() {
               >
                 {filteredCameras.map((camera) => (
                   <motion.div key={camera.id} variants={motionVariants.listItem} transition={motionTransitions.enter} layout>
-                    <RestrictedCameraCard camera={camera} viewMode="grid" />
+                    <RestrictedCameraCard camera={camera} viewMode="grid" onWatch={setWatchingCamera} />
                   </motion.div>
                 ))}
               </motion.div>
@@ -368,9 +370,11 @@ export function Area() {
                               <td className="px-8 py-4 text-right">
                                 <motion.button
                                   type="button"
+                                  onClick={() => setWatchingCamera(camera)}
+                                  disabled={camera.status === 'offline' || !camera.streamUrl}
                                   whileTap={{ scale: 0.97 }}
                                   transition={motionTransitions.pressSpring}
-                                  className="group/assistir relative inline-flex h-10 items-center justify-center gap-2 overflow-hidden rounded-full border border-[#d7e0ea] bg-white px-5 text-sm font-semibold text-[#35506f] transition hover:border-[#159dde] hover:text-white"
+                                  className="group/assistir relative inline-flex h-10 items-center justify-center gap-2 overflow-hidden rounded-full border border-[#d7e0ea] bg-white px-5 text-sm font-semibold text-[#35506f] transition hover:border-[#159dde] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
                                   aria-label={`Visualizar stream da camera ${camera.name}`}
                                 >
                                   <span className="absolute inset-0 origin-left scale-x-0 bg-[#159dde] transition-transform duration-300 ease-out group-hover/assistir:scale-x-100" />
@@ -399,6 +403,8 @@ export function Area() {
           ) : null}
         </AnimatePresence>
       </div>
+
+      <CameraWatchDialog camera={watchingCamera} onClose={() => setWatchingCamera(null)} />
     </div>
   );
 }

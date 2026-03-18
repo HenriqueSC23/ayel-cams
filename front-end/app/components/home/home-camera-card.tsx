@@ -61,7 +61,7 @@ export function HomeCameraCard({ camera, onWatch }: HomeCameraCardProps) {
         <motion.button
           type="button"
           onClick={() => onWatch?.(camera)}
-          disabled={camera.status === 'offline'}
+          disabled={camera.status === 'offline' || !camera.streamUrl}
           whileTap={{ scale: 0.98 }}
           transition={motionTransitions.pressSpring}
           className="group/assistir relative mt-4 inline-flex h-11 w-full items-center justify-center gap-2 overflow-hidden rounded-full border border-[#d7e0ea] bg-white px-3 text-[14px] font-semibold text-[#35506f] transition hover:border-[#159dde] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"

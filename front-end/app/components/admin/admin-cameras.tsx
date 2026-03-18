@@ -145,6 +145,7 @@ export function AdminCameras({
     const location = formState.location.trim();
     const category = formState.category.trim();
     const description = formState.description.trim();
+    const streamUrl = formState.streamUrl.trim();
 
     if (!name || !location || !category) {
       setFormError('Nome, local e categoria sao obrigatorios.');
@@ -160,6 +161,7 @@ export function AdminCameras({
         location,
         category,
         description,
+        streamUrl,
         quality: formState.quality,
         access: formState.access === 'Restrita' ? 'restricted' : 'public',
         status: formState.status === 'Offline' ? 'offline' : 'live',
@@ -517,7 +519,7 @@ function mapCameraToForm(camera: CameraRecord): CameraFormState {
     name: camera.name,
     location: camera.location,
     description: camera.description,
-    streamUrl: '',
+    streamUrl: camera.streamUrl,
     access: camera.access === 'restricted' ? 'Restrita' : 'Publica',
     quality: camera.quality,
     category: camera.category,

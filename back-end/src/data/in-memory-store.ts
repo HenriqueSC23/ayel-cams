@@ -90,6 +90,7 @@ const cameras: CameraRecord[] = [
     status: 'live',
     quality: 'FHD',
     image: 'https://images.unsplash.com/photo-1706476746683-1222454323f7?auto=format&fit=crop&w=1200&q=80',
+    streamUrl: 'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
     description: 'Controle de entrada de visitantes no nucleo operacional do centro historico.',
     updatedAt: 'Atualizado as 18:32',
   },
@@ -103,6 +104,7 @@ const cameras: CameraRecord[] = [
     status: 'live',
     quality: 'FHD',
     image: 'https://images.unsplash.com/photo-1677272292936-8d9d6e714c2d?auto=format&fit=crop&w=1200&q=80',
+    streamUrl: 'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
     description: 'Fluxo de atendimento e credenciamento de embarque na orla.',
     updatedAt: 'Atualizado as 18:30',
   },
@@ -116,6 +118,7 @@ const cameras: CameraRecord[] = [
     status: 'live',
     quality: 'HD',
     image: 'https://images.unsplash.com/photo-1691476093416-9af529cf296d?auto=format&fit=crop&w=1200&q=80',
+    streamUrl: 'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
     description: 'Cobertura de patio externo com foco no giro de veiculos da orla norte.',
     updatedAt: 'Atualizado as 18:21',
   },
@@ -129,6 +132,7 @@ const cameras: CameraRecord[] = [
     status: 'live',
     quality: 'HD',
     image: 'https://images.unsplash.com/photo-1717501218555-1cb73ec83766?auto=format&fit=crop&w=1200&q=80',
+    streamUrl: 'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
     description: 'Monitoramento de entrada lateral em area de alto fluxo turistico.',
     updatedAt: 'Atualizado as 18:34',
   },
@@ -142,6 +146,7 @@ const cameras: CameraRecord[] = [
     status: 'offline',
     quality: 'HD',
     image: 'https://images.unsplash.com/photo-1520607162513-77705c0f0d4a?auto=format&fit=crop&w=1200&q=80',
+    streamUrl: '',
     description: 'Cobertura de patio externo com indisponibilidade temporaria de sinal.',
     updatedAt: 'Sem sinal desde 18:04',
   },
@@ -155,6 +160,7 @@ const cameras: CameraRecord[] = [
     status: 'live',
     quality: 'FHD',
     image: 'https://images.unsplash.com/photo-1637665637343-d497d345ed2f?auto=format&fit=crop&w=1200&q=80',
+    streamUrl: 'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
     description: 'Corredor interno com acesso exclusivo para equipe autorizada.',
     updatedAt: 'Atualizado as 18:28',
   },
@@ -168,6 +174,7 @@ const cameras: CameraRecord[] = [
     status: 'live',
     quality: '4K',
     image: 'https://images.unsplash.com/photo-1610463076431-2717271d692d?auto=format&fit=crop&w=1200&q=80',
+    streamUrl: 'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
     description: 'Cobertura da movimentacao de carga no galpao logistico da BR-367.',
     updatedAt: 'Atualizado as 18:16',
   },
@@ -181,6 +188,7 @@ const cameras: CameraRecord[] = [
     status: 'live',
     quality: 'FHD',
     image: 'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=1200&q=80',
+    streamUrl: 'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
     description: 'Supervisao em tempo real do embarque e descarga na doca principal.',
     updatedAt: 'Atualizado as 18:35',
   },
@@ -194,6 +202,7 @@ const cameras: CameraRecord[] = [
     status: 'live',
     quality: 'HD',
     image: 'https://images.unsplash.com/photo-1519389950473-47ba0277781c?auto=format&fit=crop&w=1200&q=80',
+    streamUrl: 'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
     description: 'Acesso tecnico para equipes credenciadas em area sensivel.',
     updatedAt: 'Atualizado as 18:12',
   },
@@ -207,6 +216,7 @@ const cameras: CameraRecord[] = [
     status: 'offline',
     quality: 'FHD',
     image: 'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=1200&q=80',
+    streamUrl: '',
     description: 'Ambiente critico de seguranca com falha de comunicacao em diagnostico.',
     updatedAt: 'Sem sinal desde 17:48',
   },
@@ -220,6 +230,7 @@ const cameras: CameraRecord[] = [
     status: 'live',
     quality: 'HD',
     image: 'https://images.unsplash.com/photo-1518005020951-eccb494ad742?auto=format&fit=crop&w=1200&q=80',
+    streamUrl: 'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
     description: 'Ponto lateral com controle de credenciais para equipe de operacao.',
     updatedAt: 'Atualizado as 18:27',
   },
@@ -233,6 +244,7 @@ const cameras: CameraRecord[] = [
     status: 'live',
     quality: 'FHD',
     image: 'https://images.unsplash.com/photo-1577493340887-b7bfff550145?auto=format&fit=crop&w=1200&q=80',
+    streamUrl: 'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
     description: 'Cobertura de patio externo e perimetro logistico da doca sul.',
     updatedAt: 'Atualizado as 18:14',
   },
@@ -471,6 +483,7 @@ export function createCamera(input: {
   quality: 'HD' | 'FHD' | '4K';
   description: string;
   image?: string;
+  streamUrl?: string;
 }) {
   const newCamera: CameraRecord = {
     id: nextCameraId(),
@@ -484,6 +497,7 @@ export function createCamera(input: {
     image:
       input.image?.trim() ||
       'https://images.unsplash.com/photo-1504307651254-35680f356dfd?auto=format&fit=crop&w=1200&q=80',
+    streamUrl: input.streamUrl?.trim() || '',
     description: input.description.trim() || 'Camera cadastrada pela administracao.',
     updatedAt: nowCameraLabel(),
   };
@@ -504,6 +518,7 @@ export function updateCameraByAdmin(
     quality?: 'HD' | 'FHD' | '4K';
     description?: string;
     image?: string;
+    streamUrl?: string;
   },
 ) {
   const camera = findCameraById(cameraId);
@@ -545,6 +560,10 @@ export function updateCameraByAdmin(
 
   if (typeof input.image === 'string' && input.image.trim().length > 0) {
     camera.image = input.image.trim();
+  }
+
+  if (typeof input.streamUrl === 'string') {
+    camera.streamUrl = input.streamUrl.trim();
   }
 
   camera.updatedAt = nowCameraLabel();

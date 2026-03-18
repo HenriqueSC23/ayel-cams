@@ -17,6 +17,16 @@ async function registerAndGetToken(email: string, password = '123456') {
   return registerResponse.body.token as string;
 }
 
+async function loginAsAdminAndGetToken() {
+  const response = await request(app).post('/auth/login').send({
+    email: 'admin@ayel.com.br',
+    password: '123456',
+  });
+
+  expect(response.status).toBe(200);
+  return response.body.token as string;
+}
+
 describe('Auth e Controle de Acesso', () => {
   it('deve autenticar administrador com credenciais validas', async () => {
     const response = await request(app).post('/auth/login').send({
@@ -132,5 +142,48 @@ describe('Auth e Controle de Acesso', () => {
 
     const meAfterLogout = await request(app).get('/auth/me').set('Authorization', `Bearer ${token}`);
     expect(meAfterLogout.status).toBe(401);
+  });
+
+  it('deve persistir streamUrl no cadastro e na edicao de camera', async () => {
+    const token = await loginAsAdminAndGetToken();
+    const streamUrlInicial = `https://example.com/live-${Date.now()}.m3u8`;
+
+    const createResponse = await request(app)
+      .post('/cameras')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        name: 'Camera Stream Teste',
+        location: 'Setor de testes',
+        category: 'Portaria',
+        description: 'Camera criada para validar persistencia de stream.',
+        access: 'public',
+        status: 'live',
+        quality: 'HD',
+        streamUrl: streamUrlInicial,
+      });
+
+    expect(createResponse.status).toBe(201);
+    expect(createResponse.body.item.streamUrl).toBe(streamUrlInicial);
+
+    const cameraId = createResponse.body.item.id as string;
+    const streamUrlAtualizada = `https://example.com/live-updated-${Date.now()}.m3u8`;
+
+    const updateResponse = await request(app)
+      .patch(`/cameras/${cameraId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        streamUrl: streamUrlAtualizada,
+      });
+
+    expect(updateResponse.status).toBe(200);
+    expect(updateResponse.body.item.streamUrl).toBe(streamUrlAtualizada);
+
+    const listResponse = await request(app).get('/cameras').set('Authorization', `Bearer ${token}`);
+    expect(listResponse.status).toBe(200);
+    const updatedCamera = listResponse.body.items.find((item: { id: string }) => item.id === cameraId);
+    expect(updatedCamera?.streamUrl).toBe(streamUrlAtualizada);
+
+    const deleteResponse = await request(app).delete(`/cameras/${cameraId}`).set('Authorization', `Bearer ${token}`);
+    expect(deleteResponse.status).toBe(204);
   });
 });
