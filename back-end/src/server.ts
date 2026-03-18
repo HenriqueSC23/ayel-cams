@@ -1,6 +1,7 @@
 import cors from 'cors';
 import express from 'express';
 import { fileURLToPath } from 'node:url';
+import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import {
   changeOwnUserPassword,
   countAdministrators,
@@ -18,7 +19,8 @@ import {
   updateCameraByAdmin,
   updateOwnUserProfile,
   updateUserByAdmin,
-} from './data/in-memory-store.js';
+} from './data/store.js';
+import { initializeDatabase } from './db/bootstrap.js';
 import { revokeTokenId } from './lib/token-revocation-store.js';
 import { verifyPassword } from './lib/password-hash.js';
 import { optionalAuth, requireAdmin, requireAuth } from './middleware/auth-middleware.js';
@@ -225,8 +227,26 @@ function registerLoginFailure(key: string, now: number) {
   return nextEntry;
 }
 
+function withAsyncHandler(handler: (req: Request, res: Response, next: NextFunction) => Promise<void>): RequestHandler {
+  return (req, res, next) => {
+    void handler(req, res, next).catch(next);
+  };
+}
+
 const app = express();
 const port = Number(process.env.PORT || 3333);
+let databaseReadyPromise: Promise<void> | null = null;
+
+function ensureDatabaseReady() {
+  if (!databaseReadyPromise) {
+    databaseReadyPromise = initializeDatabase().catch((error) => {
+      databaseReadyPromise = null;
+      throw error;
+    });
+  }
+
+  return databaseReadyPromise;
+}
 const corsOrigin = (() => {
   const configuredOrigins = process.env.CORS_ORIGIN
     ?.split(',')
@@ -262,6 +282,13 @@ app.use(
   }),
 );
 app.use(express.json());
+app.use((req, res, next) => {
+  void ensureDatabaseReady()
+    .then(() => next())
+    .catch((error) => {
+      next(error);
+    });
+});
 
 app.get('/health', (_req, res) => {
   res.status(200).json({
@@ -271,7 +298,9 @@ app.get('/health', (_req, res) => {
   });
 });
 
-app.post('/auth/login', (req, res) => {
+app.post(
+  '/auth/login',
+  withAsyncHandler(async (req, res) => {
   const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
   const password = typeof req.body?.password === 'string' ? req.body.password : '';
   const now = Date.now();
@@ -295,7 +324,7 @@ app.post('/auth/login', (req, res) => {
     return;
   }
 
-  const user = findUserByEmail(email);
+  const user = await findUserByEmail(email);
   if (!user || !verifyPassword(password, user.passwordHash)) {
     const attempt = registerLoginFailure(loginKey, now);
     if (attempt.blockedUntil > now) {
@@ -315,7 +344,7 @@ app.post('/auth/login', (req, res) => {
     return;
   }
 
-  touchUserAccess(user.id);
+  await touchUserAccess(user.id);
 
   const token = signAuthToken({
     sub: user.id,
@@ -327,9 +356,12 @@ app.post('/auth/login', (req, res) => {
     token,
     user: toSafeUserPayload(user),
   });
-});
+  }),
+);
 
-app.post('/auth/register', (req, res) => {
+app.post(
+  '/auth/register',
+  withAsyncHandler(async (req, res) => {
   const fullName = typeof req.body?.fullName === 'string' ? req.body.fullName.trim() : '';
   const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
   const password = typeof req.body?.password === 'string' ? req.body.password : '';
@@ -349,12 +381,12 @@ app.post('/auth/register', (req, res) => {
     return;
   }
 
-  if (findUserByEmail(email)) {
+  if (await findUserByEmail(email)) {
     res.status(409).json({ message: 'Ja existe um usuario com este e-mail.' });
     return;
   }
 
-  const user = registerUser({ fullName, email, password, role: 'cliente' });
+  const user = await registerUser({ fullName, email, password, role: 'cliente' });
   const token = signAuthToken({
     sub: user.id,
     email: user.email,
@@ -365,16 +397,20 @@ app.post('/auth/register', (req, res) => {
     token,
     user: toSafeUserPayload(user),
   });
-});
+  }),
+);
 
-app.get('/auth/me', requireAuth, (req, res) => {
+app.get(
+  '/auth/me',
+  requireAuth,
+  withAsyncHandler(async (req, res) => {
   const userId = req.auth?.userId;
   if (!userId) {
     res.status(401).json({ message: 'Autenticacao obrigatoria.' });
     return;
   }
 
-  const user = findUserById(userId);
+  const user = await findUserById(userId);
   if (!user) {
     res.status(401).json({ message: 'Sessao invalida.' });
     return;
@@ -383,7 +419,8 @@ app.get('/auth/me', requireAuth, (req, res) => {
   res.status(200).json({
     ...toSafeUserPayload(user),
   });
-});
+  }),
+);
 
 app.post('/auth/logout', requireAuth, (req, res) => {
   const tokenId = req.auth?.tokenId;
@@ -398,14 +435,17 @@ app.post('/auth/logout', requireAuth, (req, res) => {
   res.status(204).send();
 });
 
-app.get('/profile/me', requireAuth, (req, res) => {
+app.get(
+  '/profile/me',
+  requireAuth,
+  withAsyncHandler(async (req, res) => {
   const userId = req.auth?.userId;
   if (!userId) {
     res.status(401).json({ message: 'Autenticacao obrigatoria.' });
     return;
   }
 
-  const user = findUserById(userId);
+  const user = await findUserById(userId);
   if (!user) {
     res.status(401).json({ message: 'Sessao invalida.' });
     return;
@@ -414,16 +454,20 @@ app.get('/profile/me', requireAuth, (req, res) => {
   res.status(200).json({
     item: toSafeUserPayload(user),
   });
-});
+  }),
+);
 
-app.patch('/profile/me', requireAuth, (req, res) => {
+app.patch(
+  '/profile/me',
+  requireAuth,
+  withAsyncHandler(async (req, res) => {
   const userId = req.auth?.userId;
   if (!userId) {
     res.status(401).json({ message: 'Autenticacao obrigatoria.' });
     return;
   }
 
-  const currentUser = findUserById(userId);
+  const currentUser = await findUserById(userId);
   if (!currentUser) {
     res.status(401).json({ message: 'Sessao invalida.' });
     return;
@@ -460,7 +504,7 @@ app.patch('/profile/me', requireAuth, (req, res) => {
       return;
     }
 
-    const existingUserWithEmail = findUserByEmail(email);
+    const existingUserWithEmail = await findUserByEmail(email);
     if (existingUserWithEmail && existingUserWithEmail.id !== userId) {
       res.status(409).json({ message: 'Ja existe um usuario com este e-mail.' });
       return;
@@ -560,16 +604,20 @@ app.patch('/profile/me', requireAuth, (req, res) => {
     return;
   }
 
-  const updatedUser = updateOwnUserProfile(userId, updatePayload);
+  const updatedUser = await updateOwnUserProfile(userId, updatePayload);
   if (!updatedUser) {
     res.status(404).json({ message: 'Usuario nao encontrado.' });
     return;
   }
 
   res.status(200).json({ item: toSafeUserPayload(updatedUser) });
-});
+  }),
+);
 
-app.patch('/profile/me/password', requireAuth, (req, res) => {
+app.patch(
+  '/profile/me/password',
+  requireAuth,
+  withAsyncHandler(async (req, res) => {
   const userId = req.auth?.userId;
   if (!userId) {
     res.status(401).json({ message: 'Autenticacao obrigatoria.' });
@@ -594,7 +642,7 @@ app.patch('/profile/me/password', requireAuth, (req, res) => {
     return;
   }
 
-  const result = changeOwnUserPassword(userId, currentPassword, newPassword);
+  const result = await changeOwnUserPassword(userId, currentPassword, newPassword);
   if (!result.ok) {
     if (result.reason === 'invalid-current-password') {
       res.status(422).json({ message: 'Senha atual invalida.' });
@@ -606,15 +654,19 @@ app.patch('/profile/me/password', requireAuth, (req, res) => {
   }
 
   res.status(204).send();
-});
+  }),
+);
 
-app.get('/cameras', optionalAuth, (req, res) => {
+app.get(
+  '/cameras',
+  optionalAuth,
+  withAsyncHandler(async (req, res) => {
   const access = typeof req.query.access === 'string' ? normalizeValue(req.query.access) : '';
   const status = parseCameraStatus(req.query.status);
   const search = typeof req.query.search === 'string' ? normalizeValue(req.query.search) : '';
 
   const canViewRestricted = req.auth?.role === 'administrador' || req.auth?.role === 'cliente';
-  let cameras = listCameras();
+  let cameras = await listCameras();
 
   if (!canViewRestricted) {
     cameras = cameras.filter((camera) => camera.access === 'public');
@@ -643,9 +695,14 @@ app.get('/cameras', optionalAuth, (req, res) => {
   }
 
   res.status(200).json({ items: cameras });
-});
+  }),
+);
 
-app.post('/cameras', requireAuth, requireAdmin, (req, res) => {
+app.post(
+  '/cameras',
+  requireAuth,
+  requireAdmin,
+  withAsyncHandler(async (req, res) => {
   const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
   const location = typeof req.body?.location === 'string' ? req.body.location.trim() : '';
   const category = typeof req.body?.category === 'string' ? req.body.category.trim() : '';
@@ -664,7 +721,7 @@ app.post('/cameras', requireAuth, requireAdmin, (req, res) => {
     return;
   }
 
-  const createdCamera = createCamera({
+  const createdCamera = await createCamera({
     name,
     location,
     category,
@@ -678,16 +735,21 @@ app.post('/cameras', requireAuth, requireAdmin, (req, res) => {
   });
 
   res.status(201).json({ item: createdCamera });
-});
+  }),
+);
 
-app.patch('/cameras/:cameraId', requireAuth, requireAdmin, (req, res) => {
+app.patch(
+  '/cameras/:cameraId',
+  requireAuth,
+  requireAdmin,
+  withAsyncHandler(async (req, res) => {
   const cameraId = typeof req.params.cameraId === 'string' ? req.params.cameraId.trim() : '';
   if (!cameraId) {
     res.status(422).json({ message: 'Identificador da camera e obrigatorio.' });
     return;
   }
 
-  const currentCamera = findCameraById(cameraId);
+  const currentCamera = await findCameraById(cameraId);
   if (!currentCamera) {
     res.status(404).json({ message: 'Camera nao encontrada.' });
     return;
@@ -798,36 +860,51 @@ app.patch('/cameras/:cameraId', requireAuth, requireAdmin, (req, res) => {
     return;
   }
 
-  const updatedCamera = updateCameraByAdmin(cameraId, updatePayload);
+  const updatedCamera = await updateCameraByAdmin(cameraId, updatePayload);
   if (!updatedCamera) {
     res.status(404).json({ message: 'Camera nao encontrada.' });
     return;
   }
 
   res.status(200).json({ item: updatedCamera });
-});
+  }),
+);
 
-app.delete('/cameras/:cameraId', requireAuth, requireAdmin, (req, res) => {
+app.delete(
+  '/cameras/:cameraId',
+  requireAuth,
+  requireAdmin,
+  withAsyncHandler(async (req, res) => {
   const cameraId = typeof req.params.cameraId === 'string' ? req.params.cameraId.trim() : '';
   if (!cameraId) {
     res.status(422).json({ message: 'Identificador da camera e obrigatorio.' });
     return;
   }
 
-  const deleted = removeCameraByAdmin(cameraId);
+  const deleted = await removeCameraByAdmin(cameraId);
   if (!deleted) {
     res.status(404).json({ message: 'Camera nao encontrada.' });
     return;
   }
 
   res.status(204).send();
-});
+  }),
+);
 
-app.get('/users', requireAuth, requireAdmin, (_req, res) => {
-  res.status(200).json({ items: listUsers() });
-});
+app.get(
+  '/users',
+  requireAuth,
+  requireAdmin,
+  withAsyncHandler(async (_req, res) => {
+    res.status(200).json({ items: await listUsers() });
+  }),
+);
 
-app.post('/users', requireAuth, requireAdmin, (req, res) => {
+app.post(
+  '/users',
+  requireAuth,
+  requireAdmin,
+  withAsyncHandler(async (req, res) => {
   const fullName = typeof req.body?.fullName === 'string' ? req.body.fullName.trim() : '';
   const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
   const password = typeof req.body?.password === 'string' ? req.body.password : '';
@@ -853,14 +930,14 @@ app.post('/users', requireAuth, requireAdmin, (req, res) => {
     return;
   }
 
-  if (findUserByEmail(email)) {
+  if (await findUserByEmail(email)) {
     res.status(409).json({ message: 'Ja existe um usuario com este e-mail.' });
     return;
   }
 
   const defaultAccess = parsedRole === 'administrador' ? 'Administrador' : 'Area restrita';
 
-  const createdUser = createUserByAdmin({
+  const createdUser = await createUserByAdmin({
     fullName,
     email,
     password,
@@ -871,16 +948,21 @@ app.post('/users', requireAuth, requireAdmin, (req, res) => {
   });
 
   res.status(201).json({ item: createdUser });
-});
+  }),
+);
 
-app.patch('/users/:userId', requireAuth, requireAdmin, (req, res) => {
+app.patch(
+  '/users/:userId',
+  requireAuth,
+  requireAdmin,
+  withAsyncHandler(async (req, res) => {
   const userId = typeof req.params.userId === 'string' ? req.params.userId.trim() : '';
   if (!userId) {
     res.status(422).json({ message: 'Identificador do usuario e obrigatorio.' });
     return;
   }
 
-  const currentUser = findUserById(userId);
+  const currentUser = await findUserById(userId);
   if (!currentUser) {
     res.status(404).json({ message: 'Usuario nao encontrado.' });
     return;
@@ -912,7 +994,7 @@ app.patch('/users/:userId', requireAuth, requireAdmin, (req, res) => {
       return;
     }
 
-    const existingUserWithEmail = findUserByEmail(email);
+    const existingUserWithEmail = await findUserByEmail(email);
     if (existingUserWithEmail && existingUserWithEmail.id !== userId) {
       res.status(409).json({ message: 'Ja existe um usuario com este e-mail.' });
       return;
@@ -967,7 +1049,7 @@ app.patch('/users/:userId', requireAuth, requireAdmin, (req, res) => {
     updatePayload.unit = unit;
   }
 
-  const isLastAdministrator = currentUser.role === 'administrador' && countAdministrators() <= 1;
+  const isLastAdministrator = currentUser.role === 'administrador' && (await countAdministrators()) <= 1;
   if (isLastAdministrator) {
     const willLoseAdminRole = updatePayload.role === 'cliente';
     const willBeInactive = updatePayload.status === 'Inativo';
@@ -999,23 +1081,28 @@ app.patch('/users/:userId', requireAuth, requireAdmin, (req, res) => {
     return;
   }
 
-  const updatedUser = updateUserByAdmin(userId, updatePayload);
+  const updatedUser = await updateUserByAdmin(userId, updatePayload);
   if (!updatedUser) {
     res.status(404).json({ message: 'Usuario nao encontrado.' });
     return;
   }
 
   res.status(200).json({ item: updatedUser });
-});
+  }),
+);
 
-app.delete('/users/:userId', requireAuth, requireAdmin, (req, res) => {
+app.delete(
+  '/users/:userId',
+  requireAuth,
+  requireAdmin,
+  withAsyncHandler(async (req, res) => {
   const userId = typeof req.params.userId === 'string' ? req.params.userId.trim() : '';
   if (!userId) {
     res.status(422).json({ message: 'Identificador do usuario e obrigatorio.' });
     return;
   }
 
-  const currentUser = findUserById(userId);
+  const currentUser = await findUserById(userId);
   if (!currentUser) {
     res.status(404).json({ message: 'Usuario nao encontrado.' });
     return;
@@ -1026,18 +1113,29 @@ app.delete('/users/:userId', requireAuth, requireAdmin, (req, res) => {
     return;
   }
 
-  if (currentUser.role === 'administrador' && countAdministrators() <= 1) {
+  if (currentUser.role === 'administrador' && (await countAdministrators()) <= 1) {
     res.status(422).json({ message: 'A plataforma precisa manter pelo menos um administrador ativo.' });
     return;
   }
 
-  const deleted = removeUserByAdmin(userId);
+  const deleted = await removeUserByAdmin(userId);
   if (!deleted) {
     res.status(404).json({ message: 'Usuario nao encontrado.' });
     return;
   }
 
   res.status(204).send();
+  }),
+);
+
+app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
+  // eslint-disable-next-line no-console
+  console.error('[ayel-cams-api] erro interno:', error);
+  if (res.headersSent) {
+    return;
+  }
+
+  res.status(500).json({ message: 'Erro interno ao processar a requisicao.' });
 });
 
 app.use((_req, res) => {
@@ -1048,8 +1146,16 @@ export { app };
 
 const isDirectRun = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
 if (isDirectRun) {
-  app.listen(port, () => {
-    // eslint-disable-next-line no-console
-    console.log(`[ayel-cams-api] listening on http://localhost:${port}`);
-  });
+  void ensureDatabaseReady()
+    .then(() => {
+      app.listen(port, () => {
+        // eslint-disable-next-line no-console
+        console.log(`[ayel-cams-api] listening on http://localhost:${port}`);
+      });
+    })
+    .catch((error) => {
+      // eslint-disable-next-line no-console
+      console.error('[ayel-cams-api] falha ao inicializar banco:', error);
+      process.exit(1);
+    });
 }

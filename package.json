@@ -10,6 +10,11 @@
     "build:front": "npm --prefix front-end run build",
     "build": "npm run build:back && npm run build:front",
     "test:back": "npm --prefix back-end run test",
-    "test": "npm run test:back"
+    "test": "npm run test:back",
+    "db:up": "docker compose -f back-end/docker-compose.yml up -d postgres",
+    "db:down": "docker compose -f back-end/docker-compose.yml down",
+    "db:migrate": "npm --prefix back-end run db:migrate",
+    "db:rollback": "npm --prefix back-end run db:rollback",
+    "db:seed": "npm --prefix back-end run db:seed"
   }
 }
