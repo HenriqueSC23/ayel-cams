@@ -1,19 +1,61 @@
-import React from 'react';
+import React, { Suspense } from 'react';
 import { createBrowserRouter } from 'react-router';
 import { GuestOnlyRoute, ProtectedRoute } from './auth/route-guards';
 import { MainLayout } from './layouts/main-layout';
-import { Home } from './pages/home';
-import { Admin } from './pages/admin';
-import { Login } from './pages/login';
-import { Area } from './pages/area';
-import { Profile } from './pages/profile';
 import { ErrorPage } from './pages/error-page';
-import { NotFoundPage } from './pages/not-found-page';
+
+const HomePage = React.lazy(async () => {
+  const module = await import('./pages/home');
+  return { default: module.Home };
+});
+
+const AdminPage = React.lazy(async () => {
+  const module = await import('./pages/admin');
+  return { default: module.Admin };
+});
+
+const LoginPage = React.lazy(async () => {
+  const module = await import('./pages/login');
+  return { default: module.Login };
+});
+
+const AreaPage = React.lazy(async () => {
+  const module = await import('./pages/area');
+  return { default: module.Area };
+});
+
+const ProfilePage = React.lazy(async () => {
+  const module = await import('./pages/profile');
+  return { default: module.Profile };
+});
+
+const NotFoundPage = React.lazy(async () => {
+  const module = await import('./pages/not-found-page');
+  return { default: module.NotFoundPage };
+});
+
+function RouteLoadingFallback() {
+  return <div className="min-h-[42vh] animate-pulse rounded-[24px] border border-[#dbe4ee] bg-white/80" />;
+}
+
+function SuspendedPage({ children }: { children: React.ReactNode }) {
+  return <Suspense fallback={<RouteLoadingFallback />}>{children}</Suspense>;
+}
+
+function HomeRoute() {
+  return (
+    <SuspendedPage>
+      <HomePage />
+    </SuspendedPage>
+  );
+}
 
 function AreaRoute() {
   return (
     <ProtectedRoute allowedRoles={['cliente', 'administrador']}>
-      <Area />
+      <SuspendedPage>
+        <AreaPage />
+      </SuspendedPage>
     </ProtectedRoute>
   );
 }
@@ -21,7 +63,9 @@ function AreaRoute() {
 function AdminRoute() {
   return (
     <ProtectedRoute allowedRoles={['administrador']}>
-      <Admin />
+      <SuspendedPage>
+        <AdminPage />
+      </SuspendedPage>
     </ProtectedRoute>
   );
 }
@@ -29,7 +73,9 @@ function AdminRoute() {
 function ProfileRoute() {
   return (
     <ProtectedRoute allowedRoles={['cliente', 'administrador']}>
-      <Profile />
+      <SuspendedPage>
+        <ProfilePage />
+      </SuspendedPage>
     </ProtectedRoute>
   );
 }
@@ -37,7 +83,9 @@ function ProfileRoute() {
 function LoginRoute() {
   return (
     <GuestOnlyRoute>
-      <Login />
+      <SuspendedPage>
+        <LoginPage />
+      </SuspendedPage>
     </GuestOnlyRoute>
   );
 }
@@ -48,11 +96,18 @@ export const router = createBrowserRouter([
     Component: MainLayout,
     errorElement: <ErrorPage />,
     children: [
-      { index: true, Component: Home },
+      { index: true, Component: HomeRoute },
       { path: 'area', Component: AreaRoute },
       { path: 'admin', Component: AdminRoute },
       { path: 'perfil', Component: ProfileRoute },
-      { path: '*', Component: NotFoundPage },
+      {
+        path: '*',
+        Component: () => (
+          <SuspendedPage>
+            <NotFoundPage />
+          </SuspendedPage>
+        ),
+      },
     ],
   },
   {

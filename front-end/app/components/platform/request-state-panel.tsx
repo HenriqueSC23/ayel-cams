@@ -6,7 +6,7 @@ interface RequestStatePanelProps {
   title: string;
   description: string;
   isLoading?: boolean;
-  state?: 'idle' | 'loading' | 'success' | 'error';
+  state?: 'idle' | 'loading' | 'success' | 'warning' | 'error';
   onRetry?: () => void;
   className?: string;
 }
@@ -15,6 +15,7 @@ export function RequestStatePanel({ title, description, isLoading = false, state
   const resolvedState = state ?? (isLoading ? 'loading' : 'error');
   const isLoadingState = resolvedState === 'loading';
   const isSuccessState = resolvedState === 'success';
+  const isWarningState = resolvedState === 'warning';
 
   return (
     <SurfacePanel className={className ?? 'motion-fade-up rounded-[24px] border-[#d8e2ec] p-6'}>
@@ -22,7 +23,11 @@ export function RequestStatePanel({ title, description, isLoading = false, state
         <div className="flex items-start gap-3">
           <div
             className={`mt-0.5 flex h-9 w-9 items-center justify-center rounded-full ${
-              isSuccessState ? 'bg-emerald-100 text-emerald-600' : 'bg-[#eef5fc] text-[#0e93d8]'
+              isSuccessState
+                ? 'bg-emerald-100 text-emerald-600'
+                : isWarningState
+                  ? 'bg-amber-100 text-amber-600'
+                  : 'bg-[#eef5fc] text-[#0e93d8]'
             }`}
           >
             {isLoadingState ? <LoaderCircle size={17} className="motion-spin-soft" /> : null}

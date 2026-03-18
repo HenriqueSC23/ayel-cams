@@ -30,6 +30,7 @@ export function Home() {
   const [isLoading, setIsLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [fallbackNotice, setFallbackNotice] = useState('');
   const [reloadKey, setReloadKey] = useState(0);
   const [watchingCamera, setWatchingCamera] = useState<CameraRecord | null>(null);
   const refreshStartedAtRef = useRef<number | null>(null);
@@ -45,14 +46,17 @@ export function Home() {
         const cameras = await getCamerasRequest({ access: 'public' }, token);
         if (isMounted) {
           setCatalog(cameras);
+          setFallbackNotice('');
         }
       } catch (error) {
         if (isMounted) {
           if (isNetworkRequestError(error)) {
             setCatalog(fallbackPublicCameras);
+            setFallbackNotice('A API esta temporariamente indisponivel. Exibindo dados locais para nao interromper o monitoramento.');
             setErrorMessage('');
             return;
           }
+          setFallbackNotice('');
           setErrorMessage(getRequestErrorMessage(error, 'Nao foi possivel carregar as cameras publicas.'));
         }
       } finally {
@@ -103,6 +107,7 @@ export function Home() {
       return;
     }
 
+    setFallbackNotice('');
     refreshStartedAtRef.current = Date.now();
     setIsRefreshing(true);
     setReloadKey((value) => value + 1);
@@ -181,108 +186,129 @@ export function Home() {
           ) : null}
 
           {contentState === 'data' ? (
-            viewMode === 'grid' ? (
-              <motion.div
-                key={`home-grid-${activeFilter}-${searchQuery}-${filteredCameras.length}`}
-                className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"
-                variants={gridStaggerVariants}
-                initial="initial"
-                animate="animate"
-                exit="exit"
-              >
-                {filteredCameras.map((camera) => (
-                  <motion.div key={camera.id} variants={motionVariants.listItem} transition={motionTransitions.enter} layout>
-                    <HomeCameraCard camera={camera} onWatch={setWatchingCamera} />
+            <motion.div key={`home-data-${activeFilter}-${searchQuery}-${filteredCameras.length}`} variants={motionVariants.fadeUp} initial="initial" animate="animate" exit="exit" transition={motionTransitions.enter}>
+              <div className="space-y-4">
+                {fallbackNotice ? (
+                  <RequestStatePanel
+                    title="API de cameras indisponivel"
+                    description={fallbackNotice}
+                    state="warning"
+                    onRetry={handleReload}
+                    className="rounded-[24px] border border-amber-200 bg-amber-50/70 p-5 shadow-[0_6px_10px_rgba(120,53,15,0.06)]"
+                  />
+                ) : null}
+
+                {viewMode === 'grid' ? (
+                  <motion.div
+                    key={`home-grid-${activeFilter}-${searchQuery}-${filteredCameras.length}`}
+                    className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"
+                    variants={gridStaggerVariants}
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                  >
+                    {filteredCameras.map((camera) => (
+                      <motion.div key={camera.id} variants={motionVariants.listItem} transition={motionTransitions.enter} layout>
+                        <HomeCameraCard camera={camera} onWatch={setWatchingCamera} />
+                      </motion.div>
+                    ))}
                   </motion.div>
-                ))}
-              </motion.div>
-            ) : (
-              <motion.div key={`home-list-${activeFilter}-${searchQuery}-${filteredCameras.length}`} variants={motionVariants.fadeUp} initial="initial" animate="animate" exit="exit" transition={motionTransitions.enter}>
-                <SurfacePanel className="overflow-hidden rounded-[26px] border-[#d8e2ec] bg-white p-0 shadow-[0_8px_14px_rgba(15,23,42,0.07)]">
-                  <div className="overflow-x-auto">
-                    <table className="w-full min-w-[1120px] divide-y divide-[#e8eef5] text-left">
-                      <thead>
-                        <tr className="bg-[#f8fbfe] text-[12px] font-semibold uppercase tracking-[0.12em] text-[#5c7698]">
-                          <th className="px-8 py-5">Preview</th>
-                          <th className="px-8 py-5">Nome da camera</th>
-                          <th className="px-8 py-5">Local</th>
-                          <th className="px-8 py-5">Acesso</th>
-                          <th className="px-8 py-5">Status</th>
-                          <th className="px-8 py-5">Qualidade</th>
-                          <th className="px-8 py-5 text-right">Acoes</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-[#edf2f7]">
-                        <AnimatePresence initial={false}>
-                          {filteredCameras.map((camera) => (
-                            <motion.tr
-                              key={camera.id}
-                              layout
-                              variants={motionVariants.listItem}
-                              initial="initial"
-                              animate="animate"
-                              exit="exit"
-                              transition={motionTransitions.enter}
-                              className="bg-white transition-colors hover:bg-[#f7fbff]"
-                            >
-                              <td className="px-8 py-4">
-                                <div className="h-[62px] w-[98px] overflow-hidden rounded-[14px] border border-[#dde6ef] bg-slate-100">
-                                  <ImageWithFallback src={camera.image} alt={camera.name} className="h-full w-full object-cover" />
-                                </div>
-                              </td>
-                              <td className="px-8 py-4 text-[18px] font-medium tracking-[-0.02em] text-[#002a52]">{camera.name}</td>
-                              <td className="px-8 py-4 text-[16px] leading-7 text-[#577190]">{camera.location}</td>
-                              <td className="px-8 py-4">
-                                <span
-                                  className={`inline-flex items-center rounded-full border px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] ${
-                                    camera.access === 'restricted'
-                                      ? 'border-amber-200 bg-amber-50 text-amber-700'
-                                      : 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                                  }`}
+                ) : (
+                  <motion.div
+                    key={`home-list-${activeFilter}-${searchQuery}-${filteredCameras.length}`}
+                    variants={motionVariants.fadeUp}
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                    transition={motionTransitions.enter}
+                  >
+                    <SurfacePanel className="overflow-hidden rounded-[26px] border-[#d8e2ec] bg-white p-0 shadow-[0_8px_14px_rgba(15,23,42,0.07)]">
+                      <div className="overflow-x-auto">
+                        <table className="w-full min-w-[1120px] divide-y divide-[#e8eef5] text-left">
+                          <thead>
+                            <tr className="bg-[#f8fbfe] text-[12px] font-semibold uppercase tracking-[0.12em] text-[#5c7698]">
+                              <th className="px-8 py-5">Preview</th>
+                              <th className="px-8 py-5">Nome da camera</th>
+                              <th className="px-8 py-5">Local</th>
+                              <th className="px-8 py-5">Acesso</th>
+                              <th className="px-8 py-5">Status</th>
+                              <th className="px-8 py-5">Qualidade</th>
+                              <th className="px-8 py-5 text-right">Acoes</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-[#edf2f7]">
+                            <AnimatePresence initial={false}>
+                              {filteredCameras.map((camera) => (
+                                <motion.tr
+                                  key={camera.id}
+                                  layout
+                                  variants={motionVariants.listItem}
+                                  initial="initial"
+                                  animate="animate"
+                                  exit="exit"
+                                  transition={motionTransitions.enter}
+                                  className="bg-white transition-colors hover:bg-[#f7fbff]"
                                 >
-                                  {camera.access === 'restricted' ? 'Restrita' : 'Publica'}
-                                </span>
-                              </td>
-                              <td className="px-8 py-4">
-                                <span
-                                  className={`inline-flex items-center gap-2 whitespace-nowrap rounded-full border px-5 py-2 text-[15px] font-medium ${
-                                    camera.status === 'offline'
-                                      ? 'border-slate-300 bg-slate-100 text-slate-600'
-                                      : 'border-red-200 bg-red-50 text-red-600'
-                                  }`}
-                                >
-                                  <span className={`h-2.5 w-2.5 rounded-full ${camera.status === 'offline' ? 'bg-slate-500' : 'bg-red-500'}`} />
-                                  {camera.status === 'offline' ? 'Offline' : 'Ao vivo'}
-                                </span>
-                              </td>
-                              <td className="px-8 py-4">
-                                <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-[12px] font-semibold uppercase tracking-[0.02em] text-[#5f7289]">
-                                  {camera.quality}
-                                </span>
-                              </td>
-                              <td className="px-8 py-4 text-right">
-                                <motion.button
-                                  type="button"
-                                  onClick={() => setWatchingCamera(camera)}
-                                  disabled={camera.status === 'offline' || !camera.streamUrl}
-                                  whileTap={{ scale: 0.97 }}
-                                  transition={motionTransitions.pressSpring}
-                                  className="group/assistir relative inline-flex h-10 items-center justify-center gap-2 overflow-hidden rounded-full border border-[#d7e0ea] bg-white px-5 text-sm font-semibold text-[#35506f] transition hover:border-[#159dde] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
-                                >
-                                  <span className="absolute inset-0 origin-left scale-x-0 bg-[#159dde] transition-transform duration-300 ease-out group-hover/assistir:scale-x-100" />
-                                  <Play size={15} className="relative z-10" />
-                                  <span className="relative z-10">Assistir</span>
-                                </motion.button>
-                              </td>
-                            </motion.tr>
-                          ))}
-                        </AnimatePresence>
-                      </tbody>
-                    </table>
-                  </div>
-                </SurfacePanel>
-              </motion.div>
-            )
+                                  <td className="px-8 py-4">
+                                    <div className="h-[62px] w-[98px] overflow-hidden rounded-[14px] border border-[#dde6ef] bg-slate-100">
+                                      <ImageWithFallback src={camera.image} alt={camera.name} className="h-full w-full object-cover" />
+                                    </div>
+                                  </td>
+                                  <td className="px-8 py-4 text-[18px] font-medium tracking-[-0.02em] text-[#002a52]">{camera.name}</td>
+                                  <td className="px-8 py-4 text-[16px] leading-7 text-[#577190]">{camera.location}</td>
+                                  <td className="px-8 py-4">
+                                    <span
+                                      className={`inline-flex items-center rounded-full border px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] ${
+                                        camera.access === 'restricted'
+                                          ? 'border-amber-200 bg-amber-50 text-amber-700'
+                                          : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                                      }`}
+                                    >
+                                      {camera.access === 'restricted' ? 'Restrita' : 'Publica'}
+                                    </span>
+                                  </td>
+                                  <td className="px-8 py-4">
+                                    <span
+                                      className={`inline-flex items-center gap-2 whitespace-nowrap rounded-full border px-5 py-2 text-[15px] font-medium ${
+                                        camera.status === 'offline'
+                                          ? 'border-slate-300 bg-slate-100 text-slate-600'
+                                          : 'border-red-200 bg-red-50 text-red-600'
+                                      }`}
+                                    >
+                                      <span className={`h-2.5 w-2.5 rounded-full ${camera.status === 'offline' ? 'bg-slate-500' : 'bg-red-500'}`} />
+                                      {camera.status === 'offline' ? 'Offline' : 'Ao vivo'}
+                                    </span>
+                                  </td>
+                                  <td className="px-8 py-4">
+                                    <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-[12px] font-semibold uppercase tracking-[0.02em] text-[#5f7289]">
+                                      {camera.quality}
+                                    </span>
+                                  </td>
+                                  <td className="px-8 py-4 text-right">
+                                    <motion.button
+                                      type="button"
+                                      onClick={() => setWatchingCamera(camera)}
+                                      disabled={camera.status === 'offline' || !camera.streamUrl}
+                                      whileTap={{ scale: 0.97 }}
+                                      transition={motionTransitions.pressSpring}
+                                      className="group/assistir relative inline-flex h-10 items-center justify-center gap-2 overflow-hidden rounded-full border border-[#d7e0ea] bg-white px-5 text-sm font-semibold text-[#35506f] transition hover:border-[#159dde] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                                    >
+                                      <span className="absolute inset-0 origin-left scale-x-0 bg-[#159dde] transition-transform duration-300 ease-out group-hover/assistir:scale-x-100" />
+                                      <Play size={15} className="relative z-10" />
+                                      <span className="relative z-10">Assistir</span>
+                                    </motion.button>
+                                  </td>
+                                </motion.tr>
+                              ))}
+                            </AnimatePresence>
+                          </tbody>
+                        </table>
+                      </div>
+                    </SurfacePanel>
+                  </motion.div>
+                )}
+              </div>
+            </motion.div>
           ) : null}
         </AnimatePresence>
       </div>

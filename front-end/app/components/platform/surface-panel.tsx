@@ -1,7 +1,7 @@
 import React from 'react';
 import { cn } from '../ui/utils';
 
-interface SurfacePanelProps extends React.HTMLAttributes<HTMLDivElement> {}
+type SurfacePanelProps = React.HTMLAttributes<HTMLDivElement>;
 
 export function SurfacePanel({ className, ...props }: SurfacePanelProps) {
   return (
