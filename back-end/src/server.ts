@@ -23,7 +23,6 @@ import {
 } from './data/store.js';
 import { initializeDatabase } from './db/bootstrap.js';
 import { query as dbQuery } from './db/client.js';
-import { logDebug, logError, logInfo, logWarn } from './lib/logger.js';
 import { revokeTokenId } from './lib/token-revocation-store.js';
 import { verifyPassword } from './lib/password-hash.js';
 import { optionalAuth, requireAdmin, requireAuth } from './middleware/auth-middleware.js';
@@ -234,6 +233,64 @@ function withAsyncHandler(handler: (req: Request, res: Response, next: NextFunct
   return (req, res, next) => {
     void handler(req, res, next).catch(next);
   };
+}
+
+type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+
+const logLevelPriority: Record<LogLevel, number> = {
+  debug: 10,
+  info: 20,
+  warn: 30,
+  error: 40,
+};
+
+const configuredLogLevel = (process.env.LOG_LEVEL || 'info').trim().toLowerCase() as LogLevel;
+const minimumLogLevel: LogLevel = configuredLogLevel in logLevelPriority ? configuredLogLevel : 'info';
+
+function shouldLog(level: LogLevel) {
+  return logLevelPriority[level] >= logLevelPriority[minimumLogLevel];
+}
+
+function writeLog(level: LogLevel, event: string, context: Record<string, unknown>) {
+  if (!shouldLog(level)) {
+    return;
+  }
+
+  const payload = JSON.stringify({
+    timestamp: new Date().toISOString(),
+    level,
+    event,
+    service: 'ayel-cams-api',
+    ...context,
+  });
+
+  if (level === 'error') {
+    console.error(payload);
+    return;
+  }
+
+  if (level === 'warn') {
+    console.warn(payload);
+    return;
+  }
+
+  console.log(payload);
+}
+
+function logDebug(event: string, context: Record<string, unknown> = {}) {
+  writeLog('debug', event, context);
+}
+
+function logInfo(event: string, context: Record<string, unknown> = {}) {
+  writeLog('info', event, context);
+}
+
+function logWarn(event: string, context: Record<string, unknown> = {}) {
+  writeLog('warn', event, context);
+}
+
+function logError(event: string, context: Record<string, unknown> = {}) {
+  writeLog('error', event, context);
 }
 
 function getErrorMessage(error: unknown) {
