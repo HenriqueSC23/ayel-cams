@@ -21,3 +21,16 @@
 ## Variaveis de ambiente
 
 Use `.env` baseado em `.env.example`.
+
+## Observabilidade basica (Sprint 6)
+
+- `GET /health/live`: liveness da API (sem dependencia de banco).
+- `GET /health/ready`: readiness com verificacao de conexao no PostgreSQL.
+- `GET /health`: status consolidado com check de banco.
+
+Logs estruturados em JSON:
+- `request.started`
+- `request.completed`
+- `request.unhandled_error`
+- `server.started`
+- `server.start_failed`

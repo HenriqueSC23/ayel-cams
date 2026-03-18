@@ -1,5 +1,6 @@
 import cors from 'cors';
 import express from 'express';
+import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import {
@@ -21,6 +22,8 @@ import {
   updateUserByAdmin,
 } from './data/store.js';
 import { initializeDatabase } from './db/bootstrap.js';
+import { query as dbQuery } from './db/client.js';
+import { logDebug, logError, logInfo, logWarn } from './lib/logger.js';
 import { revokeTokenId } from './lib/token-revocation-store.js';
 import { verifyPassword } from './lib/password-hash.js';
 import { optionalAuth, requireAdmin, requireAuth } from './middleware/auth-middleware.js';
@@ -233,8 +236,18 @@ function withAsyncHandler(handler: (req: Request, res: Response, next: NextFunct
   };
 }
 
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return 'erro desconhecido';
+}
+
 const app = express();
 const port = Number(process.env.PORT || 3333);
+const serviceName = 'ayel-cams-api';
+const serviceVersion = process.env.npm_package_version || '1.0.0';
 let databaseReadyPromise: Promise<void> | null = null;
 
 function ensureDatabaseReady() {
@@ -264,6 +277,18 @@ const corsOrigin = (() => {
   return defaultDevelopmentCorsOrigins;
 })();
 
+function resolveRequestLogLevel(statusCode: number) {
+  if (statusCode >= 500) {
+    return 'error';
+  }
+
+  if (statusCode >= 400) {
+    return 'warn';
+  }
+
+  return 'info';
+}
+
 app.use(
   cors({
     origin: (requestOrigin, callback) => {
@@ -281,6 +306,117 @@ app.use(
     },
   }),
 );
+app.use((req, res, next) => {
+  const receivedRequestId = req.header('x-request-id');
+  const requestId = typeof receivedRequestId === 'string' && receivedRequestId.trim().length > 0 ? receivedRequestId.trim() : randomUUID();
+  req.requestId = requestId;
+  res.setHeader('x-request-id', requestId);
+
+  const startedAt = process.hrtime.bigint();
+  logDebug('request.started', {
+    requestId,
+    method: req.method,
+    path: req.originalUrl,
+    ip: req.ip,
+  });
+
+  res.on('finish', () => {
+    const durationMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000;
+    const payload = {
+      requestId,
+      method: req.method,
+      path: req.originalUrl,
+      statusCode: res.statusCode,
+      durationMs: Number(durationMs.toFixed(2)),
+    };
+
+    const level = resolveRequestLogLevel(res.statusCode);
+    if (level === 'error') {
+      logError('request.completed', payload);
+      return;
+    }
+
+    if (level === 'warn') {
+      logWarn('request.completed', payload);
+      return;
+    }
+
+    logInfo('request.completed', payload);
+  });
+
+  next();
+});
+
+app.get('/health/live', (_req, res) => {
+  res.status(200).json({
+    status: 'ok',
+    service: serviceName,
+    version: serviceVersion,
+    uptimeSeconds: Number(process.uptime().toFixed(2)),
+    timestamp: new Date().toISOString(),
+  });
+});
+
+app.get(
+  '/health/ready',
+  withAsyncHandler(async (_req, res) => {
+    try {
+      await dbQuery('SELECT 1');
+      res.status(200).json({
+        status: 'ok',
+        service: serviceName,
+        version: serviceVersion,
+        checks: {
+          database: 'up',
+        },
+        timestamp: new Date().toISOString(),
+      });
+      return;
+    } catch (error) {
+      logWarn('health.ready.failed', { message: getErrorMessage(error) });
+      res.status(503).json({
+        status: 'degraded',
+        service: serviceName,
+        version: serviceVersion,
+        checks: {
+          database: 'down',
+        },
+        timestamp: new Date().toISOString(),
+      });
+    }
+  }),
+);
+
+app.get(
+  '/health',
+  withAsyncHandler(async (_req, res) => {
+    try {
+      await dbQuery('SELECT 1');
+      res.status(200).json({
+        status: 'ok',
+        service: serviceName,
+        version: serviceVersion,
+        checks: {
+          database: 'up',
+        },
+        timestamp: new Date().toISOString(),
+      });
+      return;
+    } catch (error) {
+      logWarn('health.failed', { message: getErrorMessage(error) });
+      res.status(503).json({
+        status: 'degraded',
+        service: serviceName,
+        version: serviceVersion,
+        checks: {
+          database: 'down',
+        },
+        timestamp: new Date().toISOString(),
+      });
+    }
+  }),
+);
+
 app.use(express.json());
 app.use((req, res, next) => {
   void ensureDatabaseReady()
@@ -288,14 +424,6 @@ app.use((req, res, next) => {
     .catch((error) => {
       next(error);
     });
-});
-
-app.get('/health', (_req, res) => {
-  res.status(200).json({
-    status: 'ok',
-    service: 'ayel-cams-api',
-    timestamp: new Date().toISOString(),
-  });
 });
 
 app.post(
@@ -1128,9 +1256,14 @@ app.delete(
   }),
 );
 
-app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
-  // eslint-disable-next-line no-console
-  console.error('[ayel-cams-api] erro interno:', error);
+app.use((error: unknown, req: Request, res: Response, _next: NextFunction) => {
+  logError('request.unhandled_error', {
+    requestId: req.requestId ?? 'n/a',
+    method: req.method,
+    path: req.originalUrl,
+    message: getErrorMessage(error),
+  });
+
   if (res.headersSent) {
     return;
   }
@@ -1149,13 +1282,20 @@ if (isDirectRun) {
   void ensureDatabaseReady()
     .then(() => {
       app.listen(port, () => {
-        // eslint-disable-next-line no-console
-        console.log(`[ayel-cams-api] listening on http://localhost:${port}`);
+        logInfo('server.started', {
+          service: serviceName,
+          version: serviceVersion,
+          port,
+          url: `http://localhost:${port}`,
+        });
       });
     })
     .catch((error) => {
-      // eslint-disable-next-line no-console
-      console.error('[ayel-cams-api] falha ao inicializar banco:', error);
+      logError('server.start_failed', {
+        service: serviceName,
+        version: serviceVersion,
+        message: getErrorMessage(error),
+      });
       process.exit(1);
     });
 }
