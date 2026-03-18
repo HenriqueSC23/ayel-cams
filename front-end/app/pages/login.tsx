@@ -19,6 +19,7 @@ export function Login() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [termsAccepted, setTermsAccepted] = useState(false);
+  const [rememberSession, setRememberSession] = useState(false);
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
   const [isConfirmPasswordVisible, setIsConfirmPasswordVisible] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -92,6 +93,7 @@ export function Login() {
         : await signIn({
             email: normalizedEmail,
             password: normalizedPassword,
+            rememberSession,
           });
 
       if (returnTo && returnTo.startsWith('/')) {
@@ -334,8 +336,15 @@ export function Login() {
                 <input
                   id="terms"
                   type="checkbox"
-                  checked={termsAccepted}
-                  onChange={(event) => setTermsAccepted(event.target.checked)}
+                  checked={isSignupMode ? termsAccepted : rememberSession}
+                  onChange={(event) => {
+                    if (isSignupMode) {
+                      setTermsAccepted(event.target.checked);
+                      return;
+                    }
+
+                    setRememberSession(event.target.checked);
+                  }}
                   className="mt-1 h-4 w-4 rounded border-slate-300 text-[color:var(--ayel-cyan)] focus:ring-[color:var(--ayel-cyan-soft)]"
                 />
                 <label htmlFor="terms" className="text-sm leading-6 text-slate-500">

@@ -1,4 +1,5 @@
 import type { AuthRole, AuthSafeUser, AuthUser, CameraRecord, UserPreferences } from '../types/domain-types.js';
+import { hashPassword, verifyPassword } from '../lib/password-hash.js';
 
 const defaultPreferences: UserPreferences = {
   notifyAlerts: true,
@@ -13,7 +14,7 @@ const users: AuthUser[] = [
     name: 'Carlos Souza',
     email: 'admin@ayel.com.br',
     role: 'administrador',
-    password: '123456',
+    passwordHash: '$2b$12$USyP3FoK7KwHcYyCdV9VN.xnUP.J52bBVFzXe4a4DxjxWuiILlK6S',
     profile: 'Administrador',
     status: 'Ativo',
     access: 'Administrador',
@@ -30,7 +31,7 @@ const users: AuthUser[] = [
     name: 'Mariana Lima',
     email: 'mariana.lima@ayel.com.br',
     role: 'cliente',
-    password: '123456',
+    passwordHash: '$2b$12$XOfm9oD2YcJRbZ7yZzxcr.XgmaRFbN.RHHydlMn.GU2Aw.2nJgNhq',
     profile: 'Cliente',
     status: 'Ativo',
     access: 'Area restrita',
@@ -47,7 +48,7 @@ const users: AuthUser[] = [
     name: 'Joao Martins',
     email: 'joao.m@cliente.com',
     role: 'cliente',
-    password: '123456',
+    passwordHash: '$2b$12$PRCq7.WvOoS/i3gqmZqFm.NBZLYVH102nAGh3cJ6ujwcNHsTrdmRG',
     profile: 'Cliente',
     status: 'Inativo',
     access: 'Sem acesso',
@@ -64,7 +65,7 @@ const users: AuthUser[] = [
     name: 'Fernanda Rocha',
     email: 'fernanda.r@ayel.com.br',
     role: 'administrador',
-    password: '123456',
+    passwordHash: '$2b$12$bkTL793x9ZOi1Dmj5sP3L.wLDNtWflLr1PSNYbYjb57woF3P9eBkO',
     profile: 'Administrador',
     status: 'Ativo',
     access: 'Administrador',
@@ -238,7 +239,7 @@ const cameras: CameraRecord[] = [
 ];
 
 function toSafeUser(user: AuthUser): AuthSafeUser {
-  const { password: _password, ...safeUser } = user;
+  const { passwordHash: _passwordHash, ...safeUser } = user;
   return safeUser;
 }
 
@@ -297,7 +298,7 @@ export function registerUser(input: { fullName: string; email: string; password:
     id: nextUserId(),
     name: input.fullName.trim(),
     email: input.email.trim().toLowerCase(),
-    password: input.password,
+    passwordHash: hashPassword(input.password),
     role,
     profile,
     status: 'Ativo',
@@ -330,7 +331,7 @@ export function createUserByAdmin(input: {
     id: nextUserId(),
     name: input.fullName.trim(),
     email: input.email.trim().toLowerCase(),
-    password: input.password,
+    passwordHash: hashPassword(input.password),
     role: input.role,
     profile,
     status: input.status,
@@ -378,7 +379,7 @@ export function updateUserByAdmin(
   }
 
   if (typeof input.password === 'string' && input.password.length > 0) {
-    user.password = input.password;
+    user.passwordHash = hashPassword(input.password);
   }
 
   if (typeof input.role === 'string') {
@@ -438,11 +439,11 @@ export function changeOwnUserPassword(userId: string, currentPassword: string, n
     return { ok: false as const, reason: 'not-found' as const };
   }
 
-  if (user.password !== currentPassword) {
+  if (!verifyPassword(currentPassword, user.passwordHash)) {
     return { ok: false as const, reason: 'invalid-current-password' as const };
   }
 
-  user.password = newPassword;
+  user.passwordHash = hashPassword(newPassword);
   return { ok: true as const };
 }
 

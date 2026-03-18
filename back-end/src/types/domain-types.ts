@@ -14,7 +14,7 @@ export interface AuthUser {
   name: string;
   email: string;
   role: AuthRole;
-  password: string;
+  passwordHash: string;
   profile: 'Administrador' | 'Cliente';
   status: 'Ativo' | 'Inativo';
   access: 'Administrador' | 'Area restrita' | 'Sem acesso';

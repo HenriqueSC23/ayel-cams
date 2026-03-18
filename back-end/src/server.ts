@@ -20,6 +20,7 @@ import {
   updateUserByAdmin,
 } from './data/in-memory-store.js';
 import { revokeTokenId } from './lib/token-revocation-store.js';
+import { verifyPassword } from './lib/password-hash.js';
 import { optionalAuth, requireAdmin, requireAuth } from './middleware/auth-middleware.js';
 import { signAuthToken } from './lib/auth-token.js';
 import type { AuthSafeUser, AuthUser } from './types/domain-types.js';
@@ -295,7 +296,7 @@ app.post('/auth/login', (req, res) => {
   }
 
   const user = findUserByEmail(email);
-  if (!user || user.password !== password) {
+  if (!user || !verifyPassword(password, user.passwordHash)) {
     const attempt = registerLoginFailure(loginKey, now);
     if (attempt.blockedUntil > now) {
       const retryAfterSeconds = Math.max(1, Math.ceil((attempt.blockedUntil - now) / 1000));
