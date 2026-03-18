@@ -20,6 +20,7 @@ interface PageHeaderProps {
   searchPlaceholder: string;
   searchValue: string;
   onSearchChange: (value: string) => void;
+  showSearch?: boolean;
   actions?: HeaderAction[];
   viewMode?: ViewMode;
   onViewModeChange?: (mode: ViewMode) => void;
@@ -39,6 +40,7 @@ export function PageHeader({
   searchPlaceholder,
   searchValue,
   onSearchChange,
+  showSearch = true,
   actions = [],
   viewMode = 'grid',
   onViewModeChange,
@@ -69,25 +71,29 @@ export function PageHeader({
           {subtitle ? <p className="mt-1 text-[15px] font-medium text-[#58708e]">{subtitle}</p> : null}
         </div>
 
-        <div className="flex flex-1 justify-center">
-          <motion.label
-            className={cn('relative w-full', searchWidthClass)}
-            animate={isSearchFocused ? { scale: 1.003, y: -1 } : { scale: 1, y: 0 }}
-            transition={motionTransitions.quick}
-          >
-            <Search className="pointer-events-none absolute left-6 top-1/2 h-6 w-6 -translate-y-1/2 text-[#8ea3bc]" />
-            <input
-              type="search"
-              value={searchValue}
-              onChange={(event) => onSearchChange(event.target.value)}
-              onFocus={() => setIsSearchFocused(true)}
-              onBlur={() => setIsSearchFocused(false)}
-              placeholder={searchPlaceholder}
-              aria-label={searchPlaceholder}
-              className="h-[54px] w-full rounded-full border border-[#d7e0ea] bg-[#f8fafc] pl-14 pr-6 text-[17px] font-medium text-[#35506f] outline-none transition focus:border-[#009fe3] focus:bg-white focus:ring-4 focus:ring-[#d8eefb]"
-            />
-          </motion.label>
-        </div>
+        {showSearch ? (
+          <div className="flex flex-1 justify-center">
+            <motion.label
+              className={cn('relative w-full', searchWidthClass)}
+              animate={isSearchFocused ? { scale: 1.003, y: -1 } : { scale: 1, y: 0 }}
+              transition={motionTransitions.quick}
+            >
+              <Search className="pointer-events-none absolute left-6 top-1/2 h-6 w-6 -translate-y-1/2 text-[#8ea3bc]" />
+              <input
+                type="search"
+                value={searchValue}
+                onChange={(event) => onSearchChange(event.target.value)}
+                onFocus={() => setIsSearchFocused(true)}
+                onBlur={() => setIsSearchFocused(false)}
+                placeholder={searchPlaceholder}
+                aria-label={searchPlaceholder}
+                className="h-[54px] w-full rounded-full border border-[#d7e0ea] bg-[#f8fafc] pl-14 pr-6 text-[17px] font-medium text-[#35506f] outline-none transition focus:border-[#009fe3] focus:bg-white focus:ring-4 focus:ring-[#d8eefb]"
+              />
+            </motion.label>
+          </div>
+        ) : (
+          <div className="flex-1" />
+        )}
 
         <div className="ml-auto flex items-center gap-5">
           {showViewToggle ? (

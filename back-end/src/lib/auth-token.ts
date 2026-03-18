@@ -1,5 +1,5 @@
 import jwt from 'jsonwebtoken';
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import type { AuthRole } from '../types/domain-types.js';
 
 interface SignAuthTokenPayload {
@@ -15,9 +15,19 @@ export interface AuthTokenPayload extends SignAuthTokenPayload {
 }
 
 const TOKEN_TTL = '8h';
+const generatedDevelopmentSecret = randomBytes(48).toString('hex');
 
 function getSecret() {
-  return process.env.JWT_SECRET || 'ayel-dev-secret';
+  const configuredSecret = process.env.JWT_SECRET?.trim();
+  if (configuredSecret) {
+    return configuredSecret;
+  }
+
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('JWT_SECRET obrigatorio em producao.');
+  }
+
+  return generatedDevelopmentSecret;
 }
 
 export function signAuthToken(payload: SignAuthTokenPayload) {

@@ -115,7 +115,7 @@ export function Home() {
   };
 
   return (
-    <div className="min-h-screen bg-[#f4f7fb]">
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top_right,rgba(14,147,216,0.09),transparent_36%),linear-gradient(180deg,#f6fafe_0%,#eff4f9_100%)]">
       <PageHeader
         title="Cameras"
         searchPlaceholder="Buscar camera, local ou setor"
@@ -138,11 +138,11 @@ export function Home() {
         showSystemActions={isAuthenticated}
       />
 
-      <div className="sticky top-[94px] z-20 border-b border-[#dbe4ee] bg-white px-10 py-[21px]">
+      <div className="sticky top-[94px] z-30 border-b border-[#dbe4ee] bg-white/92 px-10 py-5 shadow-[0_6px_10px_rgba(15,23,42,0.04)] backdrop-blur-md">
         <FilterChips filters={publicCameraFilters} activeFilter={activeFilter} onChange={setActiveFilter} variant="ink" className="gap-3" />
       </div>
 
-      <div className="space-y-5 px-10 pb-10 pt-8">
+      <div className="space-y-6 px-10 pb-12 pt-8">
         <AnimatePresence mode="wait" initial={false}>
           {contentState === 'error' ? (
             <motion.div key="home-error" variants={motionVariants.fadeUp} initial="initial" animate="animate" exit="exit" transition={motionTransitions.enter}>
@@ -151,7 +151,7 @@ export function Home() {
                 description={errorMessage}
                 state="error"
                 onRetry={() => setReloadKey((value) => value + 1)}
-                className="rounded-[24px] border-[#d8e2ec] p-5"
+                className="rounded-[24px] border-[#d8e2ec] bg-white p-5 shadow-[0_6px_10px_rgba(15,23,42,0.05)]"
               />
             </motion.div>
           ) : null}
@@ -163,14 +163,14 @@ export function Home() {
                 description="Aguarde enquanto buscamos os pontos de monitoramento."
                 state="loading"
                 isLoading
-                className="rounded-[24px] border-[#d8e2ec] p-5"
+                className="rounded-[24px] border-[#d8e2ec] bg-white p-5 shadow-[0_6px_10px_rgba(15,23,42,0.05)]"
               />
             </motion.div>
           ) : null}
 
           {contentState === 'empty' ? (
             <motion.div key="home-empty" variants={motionVariants.fadeUp} initial="initial" animate="animate" exit="exit" transition={motionTransitions.enter}>
-              <SurfacePanel className="rounded-[24px] border-[#d8e2ec] p-8 text-center">
+              <SurfacePanel className="rounded-[24px] border-[#d8e2ec] bg-white p-8 text-center shadow-[0_6px_10px_rgba(15,23,42,0.05)]">
                 <h3 className="text-xl font-semibold text-[#002a52]">Nenhuma camera encontrada</h3>
                 <p className="mt-2 text-sm text-[#607996]">
                   {hasSearchOrFilter
@@ -185,7 +185,7 @@ export function Home() {
             viewMode === 'grid' ? (
               <motion.div
                 key={`home-grid-${activeFilter}-${searchQuery}-${filteredCameras.length}`}
-                className="grid grid-cols-1 gap-8 xl:grid-cols-4"
+                className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"
                 variants={gridStaggerVariants}
                 initial="initial"
                 animate="animate"
@@ -199,11 +199,11 @@ export function Home() {
               </motion.div>
             ) : (
               <motion.div key={`home-list-${activeFilter}-${searchQuery}-${filteredCameras.length}`} variants={motionVariants.fadeUp} initial="initial" animate="animate" exit="exit" transition={motionTransitions.enter}>
-                <SurfacePanel className="overflow-hidden rounded-[26px] border-[#d8e2ec] bg-white p-0 shadow-[0_6px_10px_rgba(15,23,42,0.05)]">
+                <SurfacePanel className="overflow-hidden rounded-[26px] border-[#d8e2ec] bg-white p-0 shadow-[0_8px_14px_rgba(15,23,42,0.07)]">
                   <div className="overflow-x-auto">
-                    <table className="min-w-[1120px] w-full divide-y divide-[#e8eef5] text-left">
+                    <table className="w-full min-w-[1120px] divide-y divide-[#e8eef5] text-left">
                       <thead>
-                        <tr className="text-[12px] font-semibold uppercase tracking-[0.12em] text-[#5c7698]">
+                        <tr className="bg-[#f8fbfe] text-[12px] font-semibold uppercase tracking-[0.12em] text-[#5c7698]">
                           <th className="px-8 py-5">Preview</th>
                           <th className="px-8 py-5">Nome da camera</th>
                           <th className="px-8 py-5">Local</th>
@@ -224,7 +224,7 @@ export function Home() {
                               animate="animate"
                               exit="exit"
                               transition={motionTransitions.enter}
-                              className="bg-white transition hover:bg-[#f8fbfe]"
+                              className="bg-white transition-colors hover:bg-[#f7fbff]"
                             >
                               <td className="px-8 py-4">
                                 <div className="h-[62px] w-[98px] overflow-hidden rounded-[14px] border border-[#dde6ef] bg-slate-100">
@@ -232,7 +232,7 @@ export function Home() {
                                 </div>
                               </td>
                               <td className="px-8 py-4 text-[18px] font-medium tracking-[-0.02em] text-[#002a52]">{camera.name}</td>
-                              <td className="px-8 py-4 text-[16px] text-[#577190]">{camera.location}</td>
+                              <td className="px-8 py-4 text-[16px] leading-7 text-[#577190]">{camera.location}</td>
                               <td className="px-8 py-4">
                                 <span
                                   className={`inline-flex items-center rounded-full border px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] ${
@@ -268,7 +268,7 @@ export function Home() {
                                   disabled={camera.status === 'offline'}
                                   whileTap={{ scale: 0.97 }}
                                   transition={motionTransitions.pressSpring}
-                                  className="group/assistir relative inline-flex h-11 items-center justify-center gap-2 overflow-hidden rounded-full border border-[#d7e0ea] bg-white px-5 text-sm font-semibold text-[#35506f] transition hover:border-[#159dde] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                                  className="group/assistir relative inline-flex h-10 items-center justify-center gap-2 overflow-hidden rounded-full border border-[#d7e0ea] bg-white px-5 text-sm font-semibold text-[#35506f] transition hover:border-[#159dde] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
                                 >
                                   <span className="absolute inset-0 origin-left scale-x-0 bg-[#159dde] transition-transform duration-300 ease-out group-hover/assistir:scale-x-100" />
                                   <Play size={15} className="relative z-10" />
@@ -289,7 +289,7 @@ export function Home() {
       </div>
 
       <Dialog open={Boolean(watchingCamera)} onOpenChange={(isOpen) => (!isOpen ? setWatchingCamera(null) : undefined)}>
-        <DialogContent className="max-w-[920px] overflow-hidden rounded-[24px] border border-[#d8e2ec] bg-white p-0 shadow-[0_6px_10px_rgba(15,23,42,0.12)]">
+        <DialogContent className="max-w-[920px] overflow-hidden rounded-[24px] border border-[#d8e2ec] bg-white p-0 shadow-[0_14px_28px_rgba(15,23,42,0.18)]">
           <div className="border-b border-[#e8eef5] p-6">
             <DialogTitle className="text-[26px] font-semibold tracking-[-0.03em] text-[#002a52]">{watchingCamera?.name || 'Transmissao'}</DialogTitle>
             <DialogDescription className="mt-1 text-[15px] font-medium text-[#58708e]">{watchingCamera?.location || ''}</DialogDescription>

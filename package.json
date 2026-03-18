@@ -1,0 +1,15 @@
+{
+  "name": "ayel-cams",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "install:all": "npm --prefix back-end install && npm --prefix front-end install",
+    "dev:back": "npm --prefix back-end run dev",
+    "dev:front": "npm --prefix front-end run dev",
+    "build:back": "npm --prefix back-end run build",
+    "build:front": "npm --prefix front-end run build",
+    "build": "npm run build:back && npm run build:front",
+    "test:back": "npm --prefix back-end run test",
+    "test": "npm run test:back"
+  }
+}

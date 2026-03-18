@@ -29,7 +29,6 @@ const emptyAccount: AccountState = {
 export function Profile() {
   const navigate = useNavigate();
   const { user, token, updateUser, logout } = useAuth();
-  const [searchQuery, setSearchQuery] = useState('');
   const [account, setAccount] = useState<AccountState>(emptyAccount);
   const [baseAccount, setBaseAccount] = useState<AccountState>(emptyAccount);
   const [isLoading, setIsLoading] = useState(true);
@@ -211,11 +210,12 @@ export function Profile() {
       <PageHeader
         title="Meu perfil"
         subtitle="Ajuste apenas os dados essenciais da sua conta."
-        searchPlaceholder="Buscar no perfil"
-        searchValue={searchQuery}
-        onSearchChange={setSearchQuery}
+        searchPlaceholder=""
+        searchValue=""
+        onSearchChange={() => undefined}
+        showSearch={false}
         searchWidthClass="max-w-[520px]"
-        onLogout={handleLogout}
+        showSystemActions={false}
       />
 
       <div className="space-y-6 px-10 py-8">
@@ -228,89 +228,89 @@ export function Profile() {
           />
         ) : null}
 
-        <SurfacePanel className="border-[#d8e2ec] p-6 md:p-7">
-          <div className="mb-5 flex items-center gap-3 text-[#0e93d8]">
-            <User size={18} />
-            <h2 className="text-[15px] font-semibold uppercase tracking-[0.08em]">Informacoes da conta</h2>
-          </div>
+        <div className="grid gap-6 lg:grid-cols-2">
+          <SurfacePanel className="border-[#d8e2ec] p-6 md:p-7">
+            <div className="mb-5 flex items-center gap-3 text-[#0e93d8]">
+              <User size={18} />
+              <h2 className="text-[15px] font-semibold uppercase tracking-[0.08em]">Informacoes da conta</h2>
+            </div>
 
-          <div className="grid gap-6 lg:grid-cols-[120px_1fr]">
-            <div>
-              <img
-                src={user?.avatar || 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&w=200&q=80'}
-                alt={`Avatar de ${currentUserName}`}
-                className="h-24 w-24 rounded-[22px] border-2 border-white object-cover shadow-[0_6px_10px_rgba(15,23,42,0.16)]"
-              />
+            <div className="grid gap-6 lg:grid-cols-[120px_1fr]">
+              <div>
+                <img
+                  src={user?.avatar || 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&w=200&q=80'}
+                  alt={`Avatar de ${currentUserName}`}
+                  className="h-24 w-24 rounded-[22px] border-2 border-white object-cover shadow-[0_6px_10px_rgba(15,23,42,0.16)]"
+                />
+              </div>
+
+              <div className="space-y-4">
+                <Field label="Nome completo" value={account.fullName} onChange={(value) => handleAccountChange('fullName', value)} type="text" />
+                <Field label="E-mail" value={account.email} onChange={(value) => handleAccountChange('email', value)} type="email" />
+
+                {accountError ? <InlineMessage tone="error">{accountError}</InlineMessage> : null}
+                {accountMessage ? <InlineMessage tone="success">{accountMessage}</InlineMessage> : null}
+
+                <button
+                  type="button"
+                  onClick={handleSaveAccount}
+                  disabled={!hasAccountChanges || isSavingAccount}
+                  className="mt-6 inline-flex h-11 items-center justify-center gap-2 rounded-full bg-[#159dde] px-6 text-sm font-semibold text-white shadow-[0_6px_10px_rgba(21,157,222,0.24)] transition hover:bg-[#0e93d8] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <Save size={16} />
+                  {isSavingAccount ? 'Salvando...' : 'Salvar alteracoes'}
+                </button>
+              </div>
+            </div>
+          </SurfacePanel>
+
+          <SurfacePanel className="border-[#d8e2ec] p-6 md:p-7">
+            <div className="mb-5 flex items-center gap-3 text-[#0e93d8]">
+              <LockKeyhole size={18} />
+              <h2 className="text-[15px] font-semibold uppercase tracking-[0.08em]">Seguranca</h2>
             </div>
 
             <div className="space-y-4">
-              <Field label="Nome completo" value={account.fullName} onChange={(value) => handleAccountChange('fullName', value)} type="text" />
-              <Field label="E-mail" value={account.email} onChange={(value) => handleAccountChange('email', value)} type="email" />
+              <Field
+                label="Senha atual"
+                value={passwordForm.currentPassword}
+                onChange={(value) => setPasswordForm((current) => ({ ...current, currentPassword: value }))}
+                type="password"
+              />
 
-              {accountError ? <InlineMessage tone="error">{accountError}</InlineMessage> : null}
-              {accountMessage ? <InlineMessage tone="success">{accountMessage}</InlineMessage> : null}
+              <div className="grid gap-4 md:grid-cols-2">
+                <Field
+                  label="Nova senha"
+                  value={passwordForm.newPassword}
+                  onChange={(value) => setPasswordForm((current) => ({ ...current, newPassword: value }))}
+                  type="password"
+                />
+                <Field
+                  label="Confirmar nova senha"
+                  value={passwordForm.confirmNewPassword}
+                  onChange={(value) => setPasswordForm((current) => ({ ...current, confirmNewPassword: value }))}
+                  type="password"
+                />
+              </div>
+            </div>
+
+            <div className="mt-6 space-y-3">
+              {passwordError ? <InlineMessage tone="error">{passwordError}</InlineMessage> : null}
+              {passwordMessage ? <InlineMessage tone="success">{passwordMessage}</InlineMessage> : null}
 
               <button
                 type="button"
-                onClick={handleSaveAccount}
-                disabled={!hasAccountChanges || isSavingAccount}
-                className="mt-6 inline-flex h-11 items-center justify-center gap-2 rounded-full bg-[#159dde] px-6 text-sm font-semibold text-white shadow-[0_6px_10px_rgba(21,157,222,0.24)] transition hover:bg-[#0e93d8] disabled:cursor-not-allowed disabled:opacity-60"
+                onClick={handleSavePassword}
+                disabled={isSavingPassword}
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-[#159dde] px-6 text-sm font-semibold text-white shadow-[0_6px_10px_rgba(21,157,222,0.24)] transition hover:bg-[#0e93d8] disabled:cursor-not-allowed disabled:opacity-60"
               >
-                <Save size={16} />
-                {isSavingAccount ? 'Salvando...' : 'Salvar alteracoes'}
+                {isSavingPassword ? 'Atualizando...' : 'Atualizar senha'}
               </button>
             </div>
-          </div>
-        </SurfacePanel>
+          </SurfacePanel>
+        </div>
 
-        <SurfacePanel className="border-[#d8e2ec] p-6 md:p-7">
-          <div className="mb-5 flex items-center gap-3 text-[#0e93d8]">
-            <LockKeyhole size={18} />
-            <h2 className="text-[15px] font-semibold uppercase tracking-[0.08em]">Seguranca</h2>
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-3">
-            <Field
-              label="Senha atual"
-              value={passwordForm.currentPassword}
-              onChange={(value) => setPasswordForm((current) => ({ ...current, currentPassword: value }))}
-              type="password"
-            />
-            <Field
-              label="Nova senha"
-              value={passwordForm.newPassword}
-              onChange={(value) => setPasswordForm((current) => ({ ...current, newPassword: value }))}
-              type="password"
-            />
-            <Field
-              label="Confirmar nova senha"
-              value={passwordForm.confirmNewPassword}
-              onChange={(value) => setPasswordForm((current) => ({ ...current, confirmNewPassword: value }))}
-              type="password"
-            />
-          </div>
-
-          <div className="mt-6 space-y-3">
-            {passwordError ? <InlineMessage tone="error">{passwordError}</InlineMessage> : null}
-            {passwordMessage ? <InlineMessage tone="success">{passwordMessage}</InlineMessage> : null}
-
-            <button
-              type="button"
-              onClick={handleSavePassword}
-              disabled={isSavingPassword}
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-[#159dde] px-6 text-sm font-semibold text-white shadow-[0_6px_10px_rgba(21,157,222,0.24)] transition hover:bg-[#0e93d8] disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {isSavingPassword ? 'Atualizando...' : 'Atualizar senha'}
-            </button>
-          </div>
-        </SurfacePanel>
-
-        <SurfacePanel className="border-[#d8e2ec] p-6 md:p-7">
-          <div className="mb-3 flex items-center gap-3 text-[#0e93d8]">
-            <LogOut size={18} />
-            <h2 className="text-[15px] font-semibold uppercase tracking-[0.08em]">Sessao</h2>
-          </div>
-          <p className="mb-4 text-[15px] text-[#58708e]">Encerre sua sessao neste dispositivo quando finalizar o uso.</p>
+        <div className="flex justify-end pt-1">
           <button
             type="button"
             onClick={handleLogout}
@@ -319,7 +319,7 @@ export function Profile() {
             <LogOut size={16} />
             Sair da plataforma
           </button>
-        </SurfacePanel>
+        </div>
       </div>
     </div>
   );

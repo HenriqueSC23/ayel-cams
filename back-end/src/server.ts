@@ -179,6 +179,7 @@ const loginAttempts = new Map<string, LoginAttemptEntry>();
 const loginMaxFailures = Number(process.env.LOGIN_MAX_FAILURES || 5);
 const loginWindowMs = Number(process.env.LOGIN_WINDOW_MS || 10 * 60 * 1000);
 const loginBlockMs = Number(process.env.LOGIN_BLOCK_MS || 15 * 60 * 1000);
+const defaultDevelopmentCorsOrigins = ['http://localhost:5173', 'http://127.0.0.1:5173'];
 
 function getLoginAttemptKey(ip: string, email: string) {
   return `${ip}|${email}`;
@@ -225,9 +226,40 @@ function registerLoginFailure(key: string, now: number) {
 
 const app = express();
 const port = Number(process.env.PORT || 3333);
-const corsOrigin = process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',').map((value) => value.trim()) : true;
+const corsOrigin = (() => {
+  const configuredOrigins = process.env.CORS_ORIGIN
+    ?.split(',')
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
 
-app.use(cors({ origin: corsOrigin }));
+  if (configuredOrigins && configuredOrigins.length > 0) {
+    return configuredOrigins;
+  }
+
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('CORS_ORIGIN obrigatorio em producao. Informe uma lista explicita de origens.');
+  }
+
+  return defaultDevelopmentCorsOrigins;
+})();
+
+app.use(
+  cors({
+    origin: (requestOrigin, callback) => {
+      if (!requestOrigin) {
+        callback(null, true);
+        return;
+      }
+
+      if (corsOrigin.includes(requestOrigin)) {
+        callback(null, true);
+        return;
+      }
+
+      callback(new Error('Origem nao permitida por CORS.'));
+    },
+  }),
+);
 app.use(express.json());
 
 app.get('/health', (_req, res) => {
