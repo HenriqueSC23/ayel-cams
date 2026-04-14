@@ -15,6 +15,15 @@ interface CameraQuery {
   search?: string;
 }
 
+export type StreamPlaybackType = 'hls' | 'image' | 'iframe';
+
+export interface StreamSessionResponse {
+  playbackUrl: string;
+  playbackType: StreamPlaybackType;
+  posterUrl?: string;
+  expiresAt: string;
+}
+
 export interface CreateCameraInput {
   name: string;
   location: string;
@@ -93,5 +102,13 @@ export async function deleteCameraRequest(cameraId: string, token: string) {
   await httpClient<null>(`/cameras/${cameraId}`, {
     method: 'DELETE',
     token,
+  });
+}
+
+export async function createStreamSessionRequest(cameraId: string, token?: string | null) {
+  return httpClient<StreamSessionResponse>('/streams/sessions', {
+    method: 'POST',
+    token,
+    body: JSON.stringify({ cameraId }),
   });
 }

@@ -298,7 +298,7 @@ export function Area() {
               >
                 {filteredCameras.map((camera) => (
                   <motion.div key={camera.id} variants={motionVariants.listItem} transition={motionTransitions.enter} layout>
-                    <RestrictedCameraCard camera={camera} viewMode="grid" onWatch={setWatchingCamera} />
+                    <RestrictedCameraCard camera={camera} token={token} viewMode="grid" onWatch={setWatchingCamera} />
                   </motion.div>
                 ))}
               </motion.div>
@@ -371,7 +371,7 @@ export function Area() {
                                 <motion.button
                                   type="button"
                                   onClick={() => setWatchingCamera(camera)}
-                                  disabled={camera.status === 'offline' || !camera.streamUrl}
+                                  disabled={camera.status === 'offline' || !camera.hasStream}
                                   whileTap={{ scale: 0.97 }}
                                   transition={motionTransitions.pressSpring}
                                   className="group/assistir relative inline-flex h-10 items-center justify-center gap-2 overflow-hidden rounded-full border border-[#d7e0ea] bg-white px-5 text-sm font-semibold text-[#35506f] transition hover:border-[#159dde] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
@@ -404,7 +404,7 @@ export function Area() {
         </AnimatePresence>
       </div>
 
-      <CameraWatchDialog camera={watchingCamera} onClose={() => setWatchingCamera(null)} />
+      <CameraWatchDialog camera={watchingCamera} token={token} onClose={() => setWatchingCamera(null)} />
     </div>
   );
 }

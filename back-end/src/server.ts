@@ -1,6 +1,8 @@
 import cors from 'cors';
 import express from 'express';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import {
@@ -25,9 +27,19 @@ import { initializeDatabase } from './db/bootstrap.js';
 import { query as dbQuery } from './db/client.js';
 import { revokeTokenId } from './lib/token-revocation-store.js';
 import { verifyPassword } from './lib/password-hash.js';
+import { signStreamPlayToken, verifyStreamPlayToken } from './lib/stream-token.js';
+import {
+  activateStreamPlaySession,
+  completeStreamPlaySession,
+  countActiveStreamSessionsForUserCamera,
+  createStreamPlaySession,
+  findStreamPlaySessionByTokenId,
+  touchStreamPlaySession,
+} from './lib/stream-session-store.js';
+import { validateStreamSourceUrl } from './lib/stream-url-security.js';
 import { optionalAuth, requireAdmin, requireAuth } from './middleware/auth-middleware.js';
 import { signAuthToken } from './lib/auth-token.js';
-import type { AuthSafeUser, AuthUser } from './types/domain-types.js';
+import type { AuthSafeUser, AuthUser, CameraRecord } from './types/domain-types.js';
 
 function normalizeValue(value: string) {
   return value
@@ -174,6 +186,209 @@ function toSafeUserPayload(user: AuthSafeUser | AuthUser) {
   };
 }
 
+type CameraCatalogItem = Omit<CameraRecord, 'streamUrl'> & {
+  hasStream: boolean;
+};
+
+type StreamPlaybackType = 'hls' | 'image' | 'iframe';
+
+interface StreamPlaybackSource {
+  playbackType: StreamPlaybackType;
+  playbackUrl: string;
+  posterUrl?: string;
+}
+
+interface CachedPublicStreamResolution {
+  expiresAtMs: number;
+  sourceUrl: string;
+  value: StreamPlaybackSource;
+}
+
+interface RestreamerPlayerConfig {
+  poster?: string;
+  source?: string;
+}
+
+function toCameraCatalogItem(camera: CameraRecord): CameraCatalogItem {
+  return {
+    id: camera.id,
+    name: camera.name,
+    location: camera.location,
+    unit: camera.unit,
+    category: camera.category,
+    access: camera.access,
+    status: camera.status,
+    quality: camera.quality,
+    image: camera.image,
+    description: camera.description,
+    updatedAt: camera.updatedAt,
+    hasStream: camera.streamUrl.trim().length > 0,
+  };
+}
+
+function isHtmlStreamUrl(streamUrl: string) {
+  const value = streamUrl.trim();
+  if (!value) {
+    return false;
+  }
+
+  try {
+    const parsed = new URL(value);
+    const pathname = parsed.pathname.toLowerCase();
+    return pathname.endsWith('.html') || pathname.endsWith('.htm');
+  } catch {
+    return false;
+  }
+}
+
+function getPlaybackUrl(req: Request, path: string) {
+  return `${getStreamGatewayPublicBaseUrl(req)}${path}`;
+}
+
+function applyForwardedQueryParams(sourceUrl: string, query: Request['query']) {
+  const targetUrl = new URL(sourceUrl);
+
+  for (const [key, rawValue] of Object.entries(query)) {
+    if (typeof rawValue === 'string') {
+      targetUrl.searchParams.set(key, rawValue);
+      continue;
+    }
+
+    if (Array.isArray(rawValue)) {
+      targetUrl.searchParams.delete(key);
+      rawValue.forEach((value) => {
+        if (typeof value === 'string') {
+          targetUrl.searchParams.append(key, value);
+        }
+      });
+    }
+  }
+
+  return targetUrl.toString();
+}
+
+function isImageStreamUrl(streamUrl: string) {
+  return /\.(avif|gif|jpe?g|png|webp)(\?.*)?$/i.test(streamUrl.trim());
+}
+
+function isHlsStreamUrl(streamUrl: string) {
+  return /\.m3u8(\?.*)?$/i.test(streamUrl.trim());
+}
+
+function toStreamPlaybackSource(streamUrl: string, posterUrl?: string): StreamPlaybackSource {
+  const normalizedStreamUrl = streamUrl.trim();
+  if (isHlsStreamUrl(normalizedStreamUrl)) {
+    return {
+      playbackType: 'hls',
+      playbackUrl: normalizedStreamUrl,
+      posterUrl,
+    };
+  }
+
+  if (isImageStreamUrl(normalizedStreamUrl)) {
+    return {
+      playbackType: 'image',
+      playbackUrl: normalizedStreamUrl,
+      posterUrl,
+    };
+  }
+
+  return {
+    playbackType: 'iframe',
+    playbackUrl: normalizedStreamUrl,
+    posterUrl,
+  };
+}
+
+function buildAbsolutePublicAssetUrl(origin: string, rawPath: string) {
+  if (!rawPath.trim()) {
+    return '';
+  }
+
+  return new URL(rawPath.startsWith('/') ? rawPath : `/${rawPath}`, `${origin}/`).toString();
+}
+
+function parseRestreamerPlayerConfig(scriptContent: string) {
+  const firstBraceIndex = scriptContent.indexOf('{');
+  const lastBraceIndex = scriptContent.lastIndexOf('}');
+
+  if (firstBraceIndex === -1 || lastBraceIndex === -1 || lastBraceIndex <= firstBraceIndex) {
+    throw new Error('Config de stream publica invalida.');
+  }
+
+  const jsonContent = scriptContent.slice(firstBraceIndex, lastBraceIndex + 1);
+  return JSON.parse(jsonContent) as RestreamerPlayerConfig;
+}
+
+const publicStreamResolutionCache = new Map<string, CachedPublicStreamResolution>();
+const publicStreamResolutionTtlMs = 60_000;
+
+async function resolvePublicStreamSource(camera: CameraRecord): Promise<StreamPlaybackSource> {
+  const sourceUrl = camera.streamUrl.trim();
+  const cacheKey = `${camera.id}:${sourceUrl}`;
+  const now = Date.now();
+  const cachedValue = publicStreamResolutionCache.get(cacheKey);
+
+  if (cachedValue && cachedValue.sourceUrl === sourceUrl && cachedValue.expiresAtMs > now) {
+    return cachedValue.value;
+  }
+
+  const fallbackSource = toStreamPlaybackSource(sourceUrl);
+
+  if (!isHtmlStreamUrl(sourceUrl)) {
+    publicStreamResolutionCache.set(cacheKey, {
+      expiresAtMs: now + publicStreamResolutionTtlMs,
+      sourceUrl,
+      value: fallbackSource,
+    });
+    return fallbackSource;
+  }
+
+  try {
+    const parsedStreamUrl = new URL(sourceUrl);
+    const fileName = parsedStreamUrl.pathname.split('/').pop() || '';
+    const channelId = fileName.replace(/\.html?$/i, '').trim();
+
+    if (!channelId) {
+      throw new Error('Canal publico invalido.');
+    }
+
+    const configUrl = new URL(`/channels/${channelId}/config.js`, parsedStreamUrl.origin).toString();
+    const configResponse = await fetch(configUrl, {
+      method: 'GET',
+      redirect: 'follow',
+      headers: {
+        Accept: 'application/javascript,text/javascript,*/*',
+      },
+    });
+
+    if (!configResponse.ok) {
+      throw new Error('Config publica indisponivel.');
+    }
+
+    const configContent = await configResponse.text();
+    const playerConfig = parseRestreamerPlayerConfig(configContent);
+    const resolvedPlaybackUrl = typeof playerConfig.source === 'string' ? buildAbsolutePublicAssetUrl(parsedStreamUrl.origin, playerConfig.source) : '';
+    const resolvedPosterUrl = typeof playerConfig.poster === 'string' ? buildAbsolutePublicAssetUrl(parsedStreamUrl.origin, playerConfig.poster) : undefined;
+
+    const resolvedSource = resolvedPlaybackUrl ? toStreamPlaybackSource(resolvedPlaybackUrl, resolvedPosterUrl) : fallbackSource;
+    publicStreamResolutionCache.set(cacheKey, {
+      expiresAtMs: now + publicStreamResolutionTtlMs,
+      sourceUrl,
+      value: resolvedSource,
+    });
+
+    return resolvedSource;
+  } catch {
+    publicStreamResolutionCache.set(cacheKey, {
+      expiresAtMs: now + publicStreamResolutionTtlMs,
+      sourceUrl,
+      value: fallbackSource,
+    });
+    return fallbackSource;
+  }
+}
+
 interface LoginAttemptEntry {
   failedCount: number;
   firstFailureAt: number;
@@ -185,6 +400,11 @@ const loginMaxFailures = Number(process.env.LOGIN_MAX_FAILURES || 5);
 const loginWindowMs = Number(process.env.LOGIN_WINDOW_MS || 10 * 60 * 1000);
 const loginBlockMs = Number(process.env.LOGIN_BLOCK_MS || 15 * 60 * 1000);
 const defaultDevelopmentCorsOrigins = ['http://localhost:5173', 'http://127.0.0.1:5173'];
+const streamSessionAttempts = new Map<string, number[]>();
+const streamSessionWindowMs = Number(process.env.STREAM_SESSION_RATE_LIMIT_WINDOW_MS || 60 * 1000);
+const streamSessionRateLimit = Number(process.env.STREAM_SESSION_RATE_LIMIT || 12);
+const streamMaxConcurrentPerUserCamera = Number(process.env.STREAM_MAX_CONCURRENT_PER_USER_CAMERA || 2);
+const streamInternalApiKey = process.env.STREAM_INTERNAL_API_KEY?.trim() || '';
 
 function getLoginAttemptKey(ip: string, email: string) {
   return `${ip}|${email}`;
@@ -301,6 +521,15 @@ function getErrorMessage(error: unknown) {
   return 'erro desconhecido';
 }
 
+class HttpStatusError extends Error {
+  readonly statusCode: number;
+
+  constructor(statusCode: number, message: string) {
+    super(message);
+    this.statusCode = statusCode;
+  }
+}
+
 const app = express();
 const port = Number(process.env.PORT || 3333);
 const serviceName = 'ayel-cams-api';
@@ -317,6 +546,71 @@ function ensureDatabaseReady() {
 
   return databaseReadyPromise;
 }
+
+function sanitizeLoggedPath(rawPath: string) {
+  const [pathWithoutQuery, queryString] = rawPath.split('?');
+  const redactedPath = pathWithoutQuery.replace(/\/streams\/play\/[^/]+/g, '/streams/play/[redacted]');
+
+  if (!queryString) {
+    return redactedPath;
+  }
+
+  const params = new URLSearchParams(queryString);
+  ['token', 'auth', 'connkey', 'signature', 'sig'].forEach((key) => {
+    if (params.has(key)) {
+      params.set(key, '[redacted]');
+    }
+  });
+
+  return `${redactedPath}?${params.toString()}`;
+}
+
+function getStreamFingerprint(req: Request) {
+  const source = [req.ip || 'n/a', req.header('user-agent') || 'n/a'].join('|');
+  return createHash('sha256').update(source).digest('hex');
+}
+
+function consumeStreamSessionRateLimit(userId: string, cameraId: string) {
+  const key = `${userId}:${cameraId}`;
+  const now = Date.now();
+  const previous = streamSessionAttempts.get(key) || [];
+  const next = previous.filter((timestamp) => now - timestamp <= streamSessionWindowMs);
+
+  if (next.length >= streamSessionRateLimit) {
+    streamSessionAttempts.set(key, next);
+    return false;
+  }
+
+  next.push(now);
+  streamSessionAttempts.set(key, next);
+  return true;
+}
+
+function getStreamGatewayPublicBaseUrl(req: Request) {
+  const configuredBaseUrl = process.env.STREAM_GATEWAY_PUBLIC_BASE_URL?.trim();
+  if (configuredBaseUrl) {
+    return configuredBaseUrl.replace(/\/$/, '');
+  }
+
+  const host = req.get('host') || `localhost:${port}`;
+  const protocol = req.protocol || 'http';
+  return `${protocol}://${host}`;
+}
+
+function isAllowedDevelopmentOrigin(origin: string) {
+  if (process.env.NODE_ENV === 'production') {
+    return false;
+  }
+
+  try {
+    const parsedOrigin = new URL(origin);
+    const allowedHosts = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
+    return allowedHosts.has(parsedOrigin.hostname);
+  } catch {
+    return false;
+  }
+}
+
 const corsOrigin = (() => {
   const configuredOrigins = process.env.CORS_ORIGIN
     ?.split(',')
@@ -354,12 +648,12 @@ app.use(
         return;
       }
 
-      if (corsOrigin.includes(requestOrigin)) {
+      if (corsOrigin.includes(requestOrigin) || isAllowedDevelopmentOrigin(requestOrigin)) {
         callback(null, true);
         return;
       }
 
-      callback(new Error('Origem nao permitida por CORS.'));
+      callback(new HttpStatusError(403, 'Origem nao permitida por CORS.'));
     },
   }),
 );
@@ -373,7 +667,7 @@ app.use((req, res, next) => {
   logDebug('request.started', {
     requestId,
     method: req.method,
-    path: req.originalUrl,
+    path: sanitizeLoggedPath(req.originalUrl),
     ip: req.ip,
   });
 
@@ -382,7 +676,7 @@ app.use((req, res, next) => {
     const payload = {
       requestId,
       method: req.method,
-      path: req.originalUrl,
+      path: sanitizeLoggedPath(req.originalUrl),
       statusCode: res.statusCode,
       durationMs: Number(durationMs.toFixed(2)),
     };
@@ -607,18 +901,22 @@ app.get(
   }),
 );
 
-app.post('/auth/logout', requireAuth, (req, res) => {
-  const tokenId = req.auth?.tokenId;
-  const tokenExp = req.auth?.tokenExp;
+app.post(
+  '/auth/logout',
+  requireAuth,
+  withAsyncHandler(async (req, res) => {
+    const tokenId = req.auth?.tokenId;
+    const tokenExp = req.auth?.tokenExp;
 
-  if (!tokenId || typeof tokenExp !== 'number') {
-    res.status(401).json({ message: 'Sessao invalida.' });
-    return;
-  }
+    if (!tokenId || typeof tokenExp !== 'number') {
+      res.status(401).json({ message: 'Sessao invalida.' });
+      return;
+    }
 
-  revokeTokenId(tokenId, tokenExp);
-  res.status(204).send();
-});
+    await revokeTokenId(tokenId, tokenExp);
+    res.status(204).send();
+  }),
+);
 
 app.get(
   '/profile/me',
@@ -879,7 +1177,7 @@ app.get(
     });
   }
 
-  res.status(200).json({ items: cameras });
+  res.status(200).json({ items: cameras.map(toCameraCatalogItem) });
   }),
 );
 
@@ -906,6 +1204,12 @@ app.post(
     return;
   }
 
+  const streamValidation = validateStreamSourceUrl(streamUrl);
+  if (!streamValidation.ok) {
+    res.status(422).json({ message: streamValidation.message || 'URL de stream invalida.' });
+    return;
+  }
+
   const createdCamera = await createCamera({
     name,
     location,
@@ -919,7 +1223,7 @@ app.post(
     streamUrl: streamUrl || undefined,
   });
 
-  res.status(201).json({ item: createdCamera });
+  res.status(201).json({ item: toCameraCatalogItem(createdCamera) });
   }),
 );
 
@@ -1010,7 +1314,14 @@ app.patch(
       res.status(422).json({ message: 'URL de stream invalida.' });
       return;
     }
-    updatePayload.streamUrl = req.body.streamUrl.trim();
+    const streamUrl = req.body.streamUrl.trim();
+    const streamValidation = validateStreamSourceUrl(streamUrl);
+    if (!streamValidation.ok) {
+      res.status(422).json({ message: streamValidation.message || 'URL de stream invalida.' });
+      return;
+    }
+
+    updatePayload.streamUrl = streamUrl;
   }
 
   if (hasBodyField(req.body, 'access')) {
@@ -1051,7 +1362,7 @@ app.patch(
     return;
   }
 
-  res.status(200).json({ item: updatedCamera });
+  res.status(200).json({ item: toCameraCatalogItem(updatedCamera) });
   }),
 );
 
@@ -1073,6 +1384,355 @@ app.delete(
   }
 
   res.status(204).send();
+  }),
+);
+
+app.post(
+  '/streams/sessions',
+  optionalAuth,
+  withAsyncHandler(async (req, res) => {
+    const userId = req.auth?.userId;
+    const role = req.auth?.role;
+    const cameraId = typeof req.body?.cameraId === 'string' ? req.body.cameraId.trim() : '';
+
+    if (!cameraId) {
+      res.status(422).json({ message: 'cameraId e obrigatorio.' });
+      return;
+    }
+
+    const camera = await findCameraById(cameraId);
+    if (!camera) {
+      res.status(404).json({ message: 'Camera nao encontrada.' });
+      return;
+    }
+
+    if (camera.access === 'restricted' && role !== 'administrador' && role !== 'cliente') {
+      res.status(403).json({ message: 'Permissao insuficiente para visualizar esta camera.' });
+      return;
+    }
+
+    const hasStream = camera.streamUrl.trim().length > 0;
+    if (!hasStream || camera.status !== 'live') {
+      res.status(422).json({ message: 'Camera indisponivel para transmissao ao vivo.' });
+      return;
+    }
+
+    if (camera.access === 'public') {
+      const publicPlaybackSource = await resolvePublicStreamSource(camera);
+      res.status(201).json({
+        playbackType: publicPlaybackSource.playbackType,
+        playbackUrl: publicPlaybackSource.playbackUrl,
+        posterUrl: publicPlaybackSource.posterUrl,
+        expiresAt: new Date(Date.now() + publicStreamResolutionTtlMs).toISOString(),
+      });
+      return;
+    }
+
+    if (!userId || !role) {
+      res.status(401).json({ message: 'Autenticacao obrigatoria.' });
+      return;
+    }
+
+    if (!consumeStreamSessionRateLimit(userId, cameraId)) {
+      res.status(429).json({ message: 'Limite de solicitacoes de stream excedido. Tente novamente em instantes.' });
+      return;
+    }
+
+    const activeSessions = await countActiveStreamSessionsForUserCamera(userId, cameraId);
+    if (activeSessions >= streamMaxConcurrentPerUserCamera) {
+      res.status(429).json({ message: 'Limite de sessoes simultaneas para esta camera foi atingido.' });
+      return;
+    }
+
+    const tokenPayload = signStreamPlayToken({
+      userId,
+      role,
+      cameraId,
+    });
+
+    await createStreamPlaySession({
+      tokenId: tokenPayload.tokenId,
+      userId,
+      cameraId,
+      role,
+      expiresAt: tokenPayload.expiresAt,
+    });
+
+    const protectedPlaybackType = isHtmlStreamUrl(camera.streamUrl) ? 'iframe' : 'image';
+    const playbackPath = protectedPlaybackType === 'iframe' ? 'embed' : 'play';
+    const playbackUrl = getPlaybackUrl(req, `/streams/${playbackPath}/${tokenPayload.token}`);
+    res.status(201).json({
+      playbackUrl,
+      playbackType: protectedPlaybackType,
+      posterUrl: camera.image,
+      expiresAt: tokenPayload.expiresAt.toISOString(),
+    });
+  }),
+);
+
+app.get(
+  '/streams/public-embed/:cameraId',
+  withAsyncHandler(async (req, res) => {
+    const cameraId = typeof req.params.cameraId === 'string' ? req.params.cameraId.trim() : '';
+    if (!cameraId) {
+      res.status(422).json({ message: 'cameraId e obrigatorio.' });
+      return;
+    }
+
+    const camera = await findCameraById(cameraId);
+    if (!camera || camera.access !== 'public') {
+      res.status(404).json({ message: 'Camera nao encontrada.' });
+      return;
+    }
+
+    if (camera.status !== 'live' || camera.streamUrl.trim().length === 0) {
+      res.status(410).json({ message: 'Transmissao indisponivel no momento.' });
+      return;
+    }
+
+    res.redirect(302, applyForwardedQueryParams(camera.streamUrl, req.query));
+  }),
+);
+
+app.get(
+  '/streams/public-play/:cameraId',
+  withAsyncHandler(async (req, res) => {
+    const cameraId = typeof req.params.cameraId === 'string' ? req.params.cameraId.trim() : '';
+    if (!cameraId) {
+      res.status(422).json({ message: 'cameraId e obrigatorio.' });
+      return;
+    }
+
+    const camera = await findCameraById(cameraId);
+    if (!camera || camera.access !== 'public') {
+      res.status(404).json({ message: 'Camera nao encontrada.' });
+      return;
+    }
+
+    if (camera.status !== 'live' || camera.streamUrl.trim().length === 0) {
+      res.status(410).json({ message: 'Transmissao indisponivel no momento.' });
+      return;
+    }
+
+    const upstreamResponse = await fetch(camera.streamUrl, {
+      method: 'GET',
+      redirect: 'follow',
+    });
+
+    if (!upstreamResponse.ok || !upstreamResponse.body) {
+      res.status(502).json({ message: 'Nao foi possivel iniciar a transmissao da camera.' });
+      return;
+    }
+
+    const upstreamContentType = upstreamResponse.headers.get('content-type') || 'application/octet-stream';
+    const upstreamContentLength = upstreamResponse.headers.get('content-length');
+
+    res.status(200);
+    res.setHeader('Content-Type', upstreamContentType);
+    if (upstreamContentLength) {
+      res.setHeader('Content-Length', upstreamContentLength);
+    }
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+
+    await pipeline(Readable.fromWeb(upstreamResponse.body as never), res);
+  }),
+);
+
+app.get(
+  '/streams/embed/:playToken',
+  withAsyncHandler(async (req, res) => {
+    const playToken = typeof req.params.playToken === 'string' ? req.params.playToken.trim() : '';
+    if (!playToken) {
+      res.status(401).json({ message: 'Token de stream invalido.' });
+      return;
+    }
+
+    let streamPayload;
+    try {
+      streamPayload = verifyStreamPlayToken(playToken);
+    } catch {
+      res.status(401).json({ message: 'Token de stream invalido ou expirado.' });
+      return;
+    }
+
+    const session = await findStreamPlaySessionByTokenId(streamPayload.jti);
+    if (!session || session.revokedAt || session.expiresAt.getTime() <= Date.now()) {
+      res.status(401).json({ message: 'Sessao de stream expirada ou invalida.' });
+      return;
+    }
+
+    if (session.userId !== streamPayload.sub || session.cameraId !== streamPayload.cameraId || session.role !== streamPayload.role) {
+      res.status(401).json({ message: 'Sessao de stream invalida.' });
+      return;
+    }
+
+    const fingerprintHash = getStreamFingerprint(req);
+    if (session.fingerprintHash && session.fingerprintHash !== fingerprintHash) {
+      await completeStreamPlaySession(streamPayload.jti);
+      res.status(403).json({ message: 'Token de stream ja utilizado por outro cliente.' });
+      return;
+    }
+
+    const activated = await activateStreamPlaySession(streamPayload.jti, fingerprintHash);
+    if (!activated) {
+      res.status(403).json({ message: 'Token de stream ja utilizado.' });
+      return;
+    }
+
+    const camera = await findCameraById(streamPayload.cameraId);
+    if (!camera || camera.status !== 'live' || camera.streamUrl.trim().length === 0) {
+      await completeStreamPlaySession(streamPayload.jti);
+      res.status(410).json({ message: 'Transmissao indisponivel no momento.' });
+      return;
+    }
+
+    await completeStreamPlaySession(streamPayload.jti);
+    res.redirect(302, applyForwardedQueryParams(camera.streamUrl, req.query));
+  }),
+);
+
+app.get(
+  '/internal/streams/source/:cameraId',
+  withAsyncHandler(async (req, res) => {
+    if (!streamInternalApiKey) {
+      res.status(404).json({ message: 'Rota nao encontrada.' });
+      return;
+    }
+
+    const providedInternalKey = req.header('x-stream-internal-key')?.trim() || '';
+    if (!providedInternalKey || providedInternalKey !== streamInternalApiKey) {
+      res.status(401).json({ message: 'Acesso interno nao autorizado.' });
+      return;
+    }
+
+    const cameraId = typeof req.params.cameraId === 'string' ? req.params.cameraId.trim() : '';
+    if (!cameraId) {
+      res.status(422).json({ message: 'cameraId e obrigatorio.' });
+      return;
+    }
+
+    const camera = await findCameraById(cameraId);
+    if (!camera) {
+      res.status(404).json({ message: 'Camera nao encontrada.' });
+      return;
+    }
+
+    if (!camera.streamUrl.trim()) {
+      res.status(404).json({ message: 'Camera sem stream configurado.' });
+      return;
+    }
+
+    res.status(200).json({
+      cameraId: camera.id,
+      sourceUrl: camera.streamUrl,
+    });
+  }),
+);
+
+app.get(
+  '/streams/play/:playToken',
+  withAsyncHandler(async (req, res) => {
+    const playToken = typeof req.params.playToken === 'string' ? req.params.playToken.trim() : '';
+    if (!playToken) {
+      res.status(401).json({ message: 'Token de stream invalido.' });
+      return;
+    }
+
+    let streamPayload;
+    try {
+      streamPayload = verifyStreamPlayToken(playToken);
+    } catch {
+      res.status(401).json({ message: 'Token de stream invalido ou expirado.' });
+      return;
+    }
+
+    const session = await findStreamPlaySessionByTokenId(streamPayload.jti);
+    if (!session || session.revokedAt || session.expiresAt.getTime() <= Date.now()) {
+      res.status(401).json({ message: 'Sessao de stream expirada ou invalida.' });
+      return;
+    }
+
+    if (session.userId !== streamPayload.sub || session.cameraId !== streamPayload.cameraId || session.role !== streamPayload.role) {
+      res.status(401).json({ message: 'Sessao de stream invalida.' });
+      return;
+    }
+
+    const fingerprintHash = getStreamFingerprint(req);
+    if (session.fingerprintHash && session.fingerprintHash !== fingerprintHash) {
+      await completeStreamPlaySession(streamPayload.jti);
+      res.status(403).json({ message: 'Token de stream ja utilizado por outro cliente.' });
+      return;
+    }
+
+    const activated = await activateStreamPlaySession(streamPayload.jti, fingerprintHash);
+    if (!activated) {
+      res.status(403).json({ message: 'Token de stream ja utilizado.' });
+      return;
+    }
+
+    const camera = await findCameraById(streamPayload.cameraId);
+    if (!camera || camera.status !== 'live' || camera.streamUrl.trim().length === 0) {
+      await completeStreamPlaySession(streamPayload.jti);
+      res.status(410).json({ message: 'Transmissao indisponivel no momento.' });
+      return;
+    }
+
+    const controller = new AbortController();
+    const handleClientClose = () => {
+      controller.abort();
+    };
+
+    req.once('close', handleClientClose);
+
+    try {
+      const upstreamResponse = await fetch(camera.streamUrl, {
+        method: 'GET',
+        redirect: 'follow',
+        signal: controller.signal,
+      });
+
+      if (!upstreamResponse.ok || !upstreamResponse.body) {
+        await completeStreamPlaySession(streamPayload.jti);
+        res.status(502).json({ message: 'Nao foi possivel iniciar a transmissao da camera.' });
+        return;
+      }
+
+      const upstreamContentType = upstreamResponse.headers.get('content-type') || 'application/octet-stream';
+      const upstreamContentLength = upstreamResponse.headers.get('content-length');
+
+      res.status(200);
+      res.setHeader('Content-Type', upstreamContentType);
+      if (upstreamContentLength) {
+        res.setHeader('Content-Length', upstreamContentLength);
+      }
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+
+      await touchStreamPlaySession(streamPayload.jti);
+      await pipeline(Readable.fromWeb(upstreamResponse.body as never), res);
+      await completeStreamPlaySession(streamPayload.jti);
+    } catch (error) {
+      if ((error as Error).name !== 'AbortError') {
+        logWarn('stream.proxy.failed', {
+          requestId: req.requestId ?? 'n/a',
+          cameraId: streamPayload.cameraId,
+          message: getErrorMessage(error),
+        });
+
+        if (!res.headersSent) {
+          res.status(502).json({ message: 'Erro ao retransmitir stream da camera.' });
+        }
+      }
+
+      await completeStreamPlaySession(streamPayload.jti);
+    } finally {
+      req.off('close', handleClientClose);
+    }
   }),
 );
 
@@ -1314,18 +1974,28 @@ app.delete(
 );
 
 app.use((error: unknown, req: Request, res: Response, _next: NextFunction) => {
-  logError('request.unhandled_error', {
+  const statusCode = error instanceof HttpStatusError ? error.statusCode : 500;
+  const responseMessage = statusCode >= 500 ? 'Erro interno ao processar a requisicao.' : getErrorMessage(error);
+
+  const logContext = {
     requestId: req.requestId ?? 'n/a',
     method: req.method,
-    path: req.originalUrl,
+    path: sanitizeLoggedPath(req.originalUrl),
+    statusCode,
     message: getErrorMessage(error),
-  });
+  };
+
+  if (statusCode >= 500) {
+    logError('request.unhandled_error', logContext);
+  } else {
+    logWarn('request.handled_error', logContext);
+  }
 
   if (res.headersSent) {
     return;
   }
 
-  res.status(500).json({ message: 'Erro interno ao processar a requisicao.' });
+  res.status(statusCode).json({ message: responseMessage });
 });
 
 app.use((_req, res) => {

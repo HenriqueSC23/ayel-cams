@@ -51,17 +51,36 @@ describe('CRUD administrativo e consultas de cameras', () => {
 
   it('deve listar cameras restritas ao aplicar filtros como administrador', async () => {
     const token = await loginAsAdminAndGetToken();
+    const restrictedCameraName = `camera-restrita-${Date.now()}`;
+
+    const createResponse = await request(app).post('/cameras').set('Authorization', `Bearer ${token}`).send({
+      name: restrictedCameraName,
+      location: 'Area de teste restrita',
+      category: 'Administrativo',
+      description: 'Camera restrita criada para validar filtros.',
+      access: 'restricted',
+      status: 'live',
+      quality: 'HD',
+    });
+
+    expect(createResponse.status).toBe(201);
+    const createdCameraId = createResponse.body.item.id as string;
+
     const response = await request(app)
       .get('/cameras')
       .set('Authorization', `Bearer ${token}`)
-      .query({ access: 'restricted', status: 'live', search: 'galpao' });
+      .query({ access: 'restricted', status: 'live', search: restrictedCameraName });
 
     expect(response.status).toBe(200);
     expect(Array.isArray(response.body.items)).toBe(true);
     expect(response.body.items.length).toBeGreaterThan(0);
+    expect(response.body.items.some((camera: { id: string }) => camera.id === createdCameraId)).toBe(true);
     expect(response.body.items.every((camera: { access: string; status: string }) => camera.access === 'restricted' && camera.status === 'live')).toBe(
       true,
     );
+
+    const deleteResponse = await request(app).delete(`/cameras/${createdCameraId}`).set('Authorization', `Bearer ${token}`);
+    expect(deleteResponse.status).toBe(204);
   });
 
   it('deve bloquear criacao de camera para usuario nao administrador', async () => {
@@ -97,5 +116,23 @@ describe('CRUD administrativo e consultas de cameras', () => {
     });
 
     expect(forbiddenResponse.status).toBe(403);
+  });
+
+  it('deve rejeitar streamUrl insegura no cadastro de camera', async () => {
+    const token = await loginAsAdminAndGetToken();
+
+    const response = await request(app).post('/cameras').set('Authorization', `Bearer ${token}`).send({
+      name: 'Camera insegura',
+      location: 'Teste',
+      category: 'Portaria',
+      description: 'Teste de SSRF',
+      access: 'public',
+      status: 'live',
+      quality: 'HD',
+      streamUrl: 'http://127.0.0.1/private-stream',
+    });
+
+    expect(response.status).toBe(422);
+    expect(typeof response.body.message).toBe('string');
   });
 });

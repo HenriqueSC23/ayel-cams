@@ -16,7 +16,7 @@ import { createStaggerContainer, motionTransitions, motionVariants } from '../li
 import { getCamerasRequest } from '../services/camera-service';
 import { getRequestErrorMessage, isNetworkRequestError } from '../services/request-error';
 
-const homeCameraOrder = ['cam-001', 'cam-002', 'cam-003', 'cam-004', 'cam-005'] as const;
+const homeCameraOrder = ['cam-001', 'cam-002', 'cam-003', 'cam-004', 'cam-005', 'cam-006', 'cam-007'] as const;
 const MIN_REFRESH_FEEDBACK_MS = 900;
 const gridStaggerVariants = createStaggerContainer({ staggerChildren: 0.05 });
 
@@ -209,7 +209,7 @@ export function Home() {
                   >
                     {filteredCameras.map((camera) => (
                       <motion.div key={camera.id} variants={motionVariants.listItem} transition={motionTransitions.enter} layout>
-                        <HomeCameraCard camera={camera} onWatch={setWatchingCamera} />
+                        <HomeCameraCard camera={camera} token={token} onWatch={setWatchingCamera} />
                       </motion.div>
                     ))}
                   </motion.div>
@@ -288,7 +288,7 @@ export function Home() {
                                     <motion.button
                                       type="button"
                                       onClick={() => setWatchingCamera(camera)}
-                                      disabled={camera.status === 'offline' || !camera.streamUrl}
+                                      disabled={camera.status === 'offline' || !camera.hasStream}
                                       whileTap={{ scale: 0.97 }}
                                       transition={motionTransitions.pressSpring}
                                       className="group/assistir relative inline-flex h-10 items-center justify-center gap-2 overflow-hidden rounded-full border border-[#d7e0ea] bg-white px-5 text-sm font-semibold text-[#35506f] transition hover:border-[#159dde] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
@@ -313,7 +313,7 @@ export function Home() {
         </AnimatePresence>
       </div>
 
-      <CameraWatchDialog camera={watchingCamera} onClose={() => setWatchingCamera(null)} />
+      <CameraWatchDialog camera={watchingCamera} token={token} onClose={() => setWatchingCamera(null)} />
     </div>
   );
 }

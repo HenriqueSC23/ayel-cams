@@ -1,5 +1,6 @@
 import { migrateUp } from './migration-runner.js';
-import { hasSeedData, seedDatabase } from './seed.js';
+import { seedDatabase } from './seed.js';
+import { migrateLegacyPlaintextStreamUrls } from '../repositories/camera-repository.js';
 
 function asBoolean(value: string | undefined, fallback: boolean) {
   if (typeof value !== 'string') {
@@ -30,8 +31,6 @@ export async function initializeDatabase() {
     return;
   }
 
-  const alreadySeeded = await hasSeedData();
-  if (!alreadySeeded) {
-    await seedDatabase();
-  }
+  await seedDatabase();
+  await migrateLegacyPlaintextStreamUrls();
 }

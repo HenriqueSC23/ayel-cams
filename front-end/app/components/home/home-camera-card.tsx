@@ -1,16 +1,17 @@
 import React from 'react';
 import { Lock, MapPin, Play, Unlock } from 'lucide-react';
 import { motion } from 'motion/react';
-import { ImageWithFallback } from '../figma/image-with-fallback';
 import type { CameraRecord } from '../../data/platform';
 import { motionTransitions } from '../../lib/motion-presets';
+import { CameraLivePreview } from '../platform/camera-live-preview';
 
 interface HomeCameraCardProps {
   camera: CameraRecord;
+  token?: string | null;
   onWatch?: (camera: CameraRecord) => void;
 }
 
-export function HomeCameraCard({ camera, onWatch }: HomeCameraCardProps) {
+export function HomeCameraCard({ camera, token, onWatch }: HomeCameraCardProps) {
   const statusTone = camera.status === 'live' ? 'border-white/15 bg-[#2e3541cc] text-white' : 'border-white/15 bg-[#3f4959cc] text-white';
   const statusDot = camera.status === 'live' ? 'bg-[#ff4b4b]' : 'bg-[#a6b6cb]';
 
@@ -25,8 +26,13 @@ export function HomeCameraCard({ camera, onWatch }: HomeCameraCardProps) {
       transition={motionTransitions.gentleSpring}
       className="group overflow-hidden rounded-[24px] border border-[#d8e2ec] bg-white shadow-[0_1px_2px_rgba(16,24,40,0.04),0_10px_18px_rgba(15,23,42,0.07)] transition-shadow hover:shadow-[0_1px_2px_rgba(16,24,40,0.06),0_16px_28px_rgba(15,23,42,0.11)]"
     >
-      <div className="relative aspect-[16/10] overflow-hidden bg-slate-200">
-        <ImageWithFallback src={camera.image} alt={camera.name} className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105" />
+      <div className="relative aspect-video overflow-hidden bg-slate-200">
+        <CameraLivePreview
+          camera={camera}
+          token={token}
+          className="absolute inset-0"
+          imageClassName="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105"
+        />
         <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-black/55 via-black/20 to-transparent" />
         <div className="pointer-events-none absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-black/65 via-black/20 to-transparent" />
 
@@ -61,7 +67,7 @@ export function HomeCameraCard({ camera, onWatch }: HomeCameraCardProps) {
         <motion.button
           type="button"
           onClick={() => onWatch?.(camera)}
-          disabled={camera.status === 'offline' || !camera.streamUrl}
+          disabled={camera.status === 'offline' || !camera.hasStream}
           whileTap={{ scale: 0.98 }}
           transition={motionTransitions.pressSpring}
           className="group/assistir relative mt-4 inline-flex h-11 w-full items-center justify-center gap-2 overflow-hidden rounded-full border border-[#d7e0ea] bg-white px-3 text-[14px] font-semibold text-[#35506f] transition hover:border-[#159dde] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"

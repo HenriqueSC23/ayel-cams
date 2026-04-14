@@ -1,29 +1,52 @@
-const revokedTokenExpirations = new Map<string, number>();
+import { query } from '../db/client.js';
 
-function cleanupRevokedTokens(nowSeconds: number) {
-  revokedTokenExpirations.forEach((exp, tokenId) => {
-    if (exp <= nowSeconds) {
-      revokedTokenExpirations.delete(tokenId);
-    }
-  });
-}
+let lastExpiredTokenCleanupAt = 0;
+const cleanupIntervalMs = 60_000;
 
-export function revokeTokenId(tokenId: string, exp: number) {
-  revokedTokenExpirations.set(tokenId, exp);
-}
-
-export function isTokenIdRevoked(tokenId: string) {
-  const nowSeconds = Math.floor(Date.now() / 1000);
-  cleanupRevokedTokens(nowSeconds);
-
-  const expiration = revokedTokenExpirations.get(tokenId);
-  if (!expiration) {
-    return false;
+async function cleanupExpiredRevokedTokens() {
+  const now = Date.now();
+  if (now - lastExpiredTokenCleanupAt < cleanupIntervalMs) {
+    return;
   }
 
-  return expiration > nowSeconds;
+  lastExpiredTokenCleanupAt = now;
+  await query('DELETE FROM revoked_tokens WHERE expires_at <= NOW()');
 }
 
-export function clearRevokedTokenStore() {
-  revokedTokenExpirations.clear();
+export async function revokeTokenId(tokenId: string, exp: number) {
+  const expiresAt = new Date(exp * 1000);
+
+  await query(
+    `
+      INSERT INTO revoked_tokens (token_id, expires_at)
+      VALUES ($1, $2)
+      ON CONFLICT (token_id)
+      DO UPDATE SET expires_at = EXCLUDED.expires_at
+    `,
+    [tokenId, expiresAt],
+  );
+
+  await cleanupExpiredRevokedTokens();
+}
+
+export async function isTokenIdRevoked(tokenId: string) {
+  await cleanupExpiredRevokedTokens();
+
+  const result = await query<{ is_revoked: boolean }>(
+    `
+      SELECT EXISTS (
+        SELECT 1
+        FROM revoked_tokens
+        WHERE token_id = $1
+          AND expires_at > NOW()
+      ) AS is_revoked
+    `,
+    [tokenId],
+  );
+
+  return Boolean(result.rows[0]?.is_revoked);
+}
+
+export async function clearRevokedTokenStore() {
+  await query('DELETE FROM revoked_tokens');
 }

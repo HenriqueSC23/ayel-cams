@@ -74,6 +74,7 @@ describe('Auth e Controle de Acesso', () => {
     expect(Array.isArray(response.body.items)).toBe(true);
     expect(response.body.items.length).toBeGreaterThan(0);
     expect(response.body.items.every((item: { access: string }) => item.access === 'public')).toBe(true);
+    expect(response.body.items.every((item: { streamUrl?: string; hasStream?: boolean }) => item.streamUrl === undefined && typeof item.hasStream === 'boolean')).toBe(true);
   });
 
   it('deve negar filtro restrito sem autenticacao', async () => {
@@ -144,7 +145,7 @@ describe('Auth e Controle de Acesso', () => {
     expect(meAfterLogout.status).toBe(401);
   });
 
-  it('deve persistir streamUrl no cadastro e na edicao de camera', async () => {
+  it('deve criar sessao efemera sem expor streamUrl em respostas de camera', async () => {
     const token = await loginAsAdminAndGetToken();
     const streamUrlInicial = `https://example.com/live-${Date.now()}.m3u8`;
 
@@ -163,7 +164,8 @@ describe('Auth e Controle de Acesso', () => {
       });
 
     expect(createResponse.status).toBe(201);
-    expect(createResponse.body.item.streamUrl).toBe(streamUrlInicial);
+    expect(createResponse.body.item.hasStream).toBe(true);
+    expect(createResponse.body.item.streamUrl).toBeUndefined();
 
     const cameraId = createResponse.body.item.id as string;
     const streamUrlAtualizada = `https://example.com/live-updated-${Date.now()}.m3u8`;
@@ -176,14 +178,31 @@ describe('Auth e Controle de Acesso', () => {
       });
 
     expect(updateResponse.status).toBe(200);
-    expect(updateResponse.body.item.streamUrl).toBe(streamUrlAtualizada);
+    expect(updateResponse.body.item.hasStream).toBe(true);
+    expect(updateResponse.body.item.streamUrl).toBeUndefined();
 
     const listResponse = await request(app).get('/cameras').set('Authorization', `Bearer ${token}`);
     expect(listResponse.status).toBe(200);
     const updatedCamera = listResponse.body.items.find((item: { id: string }) => item.id === cameraId);
-    expect(updatedCamera?.streamUrl).toBe(streamUrlAtualizada);
+    expect(updatedCamera?.hasStream).toBe(true);
+    expect(updatedCamera?.streamUrl).toBeUndefined();
+
+    const streamSessionResponse = await request(app)
+      .post('/streams/sessions')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ cameraId });
+
+    expect(streamSessionResponse.status).toBe(201);
+    expect(typeof streamSessionResponse.body.playbackUrl).toBe('string');
+    expect(streamSessionResponse.body.playbackUrl).toContain('/streams/play/');
+    expect(typeof streamSessionResponse.body.expiresAt).toBe('string');
 
     const deleteResponse = await request(app).delete(`/cameras/${cameraId}`).set('Authorization', `Bearer ${token}`);
     expect(deleteResponse.status).toBe(204);
+  });
+
+  it('deve exigir autenticacao para criar sessao de stream', async () => {
+    const response = await request(app).post('/streams/sessions').send({ cameraId: 'cam-001' });
+    expect(response.status).toBe(401);
   });
 });

@@ -18,26 +18,28 @@ export function optionalAuth(req: Request, _res: Response, next: NextFunction) {
     return;
   }
 
-  try {
-    const payload = verifyAuthToken(token);
-    if (isTokenIdRevoked(payload.jti)) {
+  void (async () => {
+    try {
+      const payload = verifyAuthToken(token);
+      if (await isTokenIdRevoked(payload.jti)) {
+        req.auth = undefined;
+        next();
+        return;
+      }
+
+      req.auth = {
+        userId: payload.sub,
+        role: payload.role,
+        email: payload.email,
+        tokenId: payload.jti,
+        tokenExp: payload.exp,
+      };
+    } catch {
       req.auth = undefined;
-      next();
-      return;
     }
 
-    req.auth = {
-      userId: payload.sub,
-      role: payload.role,
-      email: payload.email,
-      tokenId: payload.jti,
-      tokenExp: payload.exp,
-    };
-  } catch {
-    req.auth = undefined;
-  }
-
-  next();
+    next();
+  })();
 }
 
 export function requireAuth(req: Request, res: Response, next: NextFunction) {
@@ -48,24 +50,26 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
     return;
   }
 
-  try {
-    const payload = verifyAuthToken(token);
-    if (isTokenIdRevoked(payload.jti)) {
-      res.status(401).json({ message: 'Token invalido ou expirado.' });
-      return;
-    }
+  void (async () => {
+    try {
+      const payload = verifyAuthToken(token);
+      if (await isTokenIdRevoked(payload.jti)) {
+        res.status(401).json({ message: 'Token invalido ou expirado.' });
+        return;
+      }
 
-    req.auth = {
-      userId: payload.sub,
-      role: payload.role,
-      email: payload.email,
-      tokenId: payload.jti,
-      tokenExp: payload.exp,
-    };
-    next();
-  } catch {
-    res.status(401).json({ message: 'Token invalido ou expirado.' });
-  }
+      req.auth = {
+        userId: payload.sub,
+        role: payload.role,
+        email: payload.email,
+        tokenId: payload.jti,
+        tokenExp: payload.exp,
+      };
+      next();
+    } catch {
+      res.status(401).json({ message: 'Token invalido ou expirado.' });
+    }
+  })();
 }
 
 export function requireAdmin(req: Request, res: Response, next: NextFunction) {

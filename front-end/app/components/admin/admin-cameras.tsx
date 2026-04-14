@@ -161,11 +161,14 @@ export function AdminCameras({
         location,
         category,
         description,
-        streamUrl,
         quality: formState.quality,
         access: formState.access === 'Restrita' ? 'restricted' : 'public',
         status: formState.status === 'Offline' ? 'offline' : 'live',
       };
+
+      if (streamUrl.length > 0) {
+        payload.streamUrl = streamUrl;
+      }
 
       if (editingCamera) {
         await onUpdateCamera(editingCamera.id, payload);
@@ -434,7 +437,7 @@ export function AdminCameras({
                           onChange={(value) => handleFormFieldChange('description', value)}
                         />
                         <FormField
-                          label="URL do stream"
+                          label="Substituir URL do stream (opcional)"
                           placeholder="rtsp://usuario:senha@ip/stream"
                           value={formState.streamUrl}
                           onChange={(value) => handleFormFieldChange('streamUrl', value)}
@@ -519,7 +522,7 @@ function mapCameraToForm(camera: CameraRecord): CameraFormState {
     name: camera.name,
     location: camera.location,
     description: camera.description,
-    streamUrl: camera.streamUrl,
+    streamUrl: '',
     access: camera.access === 'restricted' ? 'Restrita' : 'Publica',
     quality: camera.quality,
     category: camera.category,

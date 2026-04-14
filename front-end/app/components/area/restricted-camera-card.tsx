@@ -3,16 +3,17 @@ import { Lock, Play } from 'lucide-react';
 import { motion } from 'motion/react';
 import type { CameraRecord, ViewMode } from '../../data/platform';
 import { motionTransitions } from '../../lib/motion-presets';
-import { ImageWithFallback } from '../figma/image-with-fallback';
+import { CameraLivePreview } from '../platform/camera-live-preview';
 import { cn } from '../ui/utils';
 
 interface RestrictedCameraCardProps {
   camera: CameraRecord;
+  token?: string | null;
   viewMode?: ViewMode;
   onWatch?: (camera: CameraRecord) => void;
 }
 
-export function RestrictedCameraCard({ camera, viewMode = 'grid', onWatch }: RestrictedCameraCardProps) {
+export function RestrictedCameraCard({ camera, token, viewMode = 'grid', onWatch }: RestrictedCameraCardProps) {
   const statusTone = camera.status === 'live' ? 'bg-[#3b3b3dcc] text-white' : 'bg-[#3c434fcc] text-white';
   const statusDot = camera.status === 'live' ? 'bg-[#ff4040]' : 'bg-[#a7b5ca]';
 
@@ -31,10 +32,11 @@ export function RestrictedCameraCard({ camera, viewMode = 'grid', onWatch }: Res
           viewMode === 'grid' ? 'aspect-[406/229]' : 'aspect-[406/229] md:w-[430px] md:aspect-auto md:min-h-[248px]',
         )}
       >
-        <ImageWithFallback
-          src={camera.image}
-          alt={camera.name}
-          className={cn('h-full w-full object-cover', camera.status === 'offline' && 'brightness-75 saturate-75')}
+        <CameraLivePreview
+          camera={camera}
+          token={token}
+          className="absolute inset-0"
+          imageClassName={cn('h-full w-full object-cover', camera.status === 'offline' && 'brightness-75 saturate-75')}
         />
         <div className="pointer-events-none absolute inset-x-0 top-0 h-20 bg-gradient-to-b from-black/45 to-transparent" />
         <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/45 to-transparent" />
@@ -81,7 +83,7 @@ export function RestrictedCameraCard({ camera, viewMode = 'grid', onWatch }: Res
           <motion.button
             type="button"
             onClick={() => onWatch?.(camera)}
-            disabled={camera.status === 'offline' || !camera.streamUrl}
+            disabled={camera.status === 'offline' || !camera.hasStream}
             whileTap={{ scale: 0.97 }}
             transition={motionTransitions.pressSpring}
             className="group/assistir relative inline-flex h-10 items-center justify-center gap-1.5 overflow-hidden rounded-full border border-[#d7e0ea] bg-white px-4 text-[13px] font-semibold text-[#35506f] transition hover:border-[#159dde] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"

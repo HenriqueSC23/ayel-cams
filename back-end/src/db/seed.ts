@@ -1,6 +1,7 @@
 import type { PoolClient } from 'pg';
 import { query, withTransaction } from './client.js';
 import { seedCameras, seedUsers } from './seed-data.js';
+import { encryptStreamUrl } from '../lib/stream-url-crypto.js';
 
 async function seedUsersTable(client: PoolClient) {
   for (const user of seedUsers) {
@@ -50,7 +51,17 @@ async function seedUsersTable(client: PoolClient) {
 }
 
 async function seedCamerasTable(client: PoolClient) {
+  const seedCameraIds = seedCameras.map((camera) => camera.id);
+
+  if (seedCameraIds.length > 0) {
+    await client.query('DELETE FROM cameras WHERE NOT (id = ANY($1::text[]))', [seedCameraIds]);
+  } else {
+    await client.query('DELETE FROM cameras');
+  }
+
   for (const camera of seedCameras) {
+    const encryptedStream = encryptStreamUrl(camera.streamUrl);
+
     await client.query(
       `
         INSERT INTO cameras (
@@ -64,13 +75,34 @@ async function seedCamerasTable(client: PoolClient) {
           quality,
           image,
           stream_url,
+          stream_url_encrypted,
+          stream_url_iv,
+          stream_url_tag,
+          stream_url_key_version,
           description,
           updated_at_label
         )
         VALUES (
-          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, '', $10, $11, $12, $13, $14, $15
         )
-        ON CONFLICT (id) DO NOTHING
+        ON CONFLICT (id) DO UPDATE
+        SET
+          name = EXCLUDED.name,
+          location = EXCLUDED.location,
+          unit = EXCLUDED.unit,
+          category = EXCLUDED.category,
+          access = EXCLUDED.access,
+          status = EXCLUDED.status,
+          quality = EXCLUDED.quality,
+          image = EXCLUDED.image,
+          stream_url = '',
+          stream_url_encrypted = EXCLUDED.stream_url_encrypted,
+          stream_url_iv = EXCLUDED.stream_url_iv,
+          stream_url_tag = EXCLUDED.stream_url_tag,
+          stream_url_key_version = EXCLUDED.stream_url_key_version,
+          description = EXCLUDED.description,
+          updated_at_label = EXCLUDED.updated_at_label,
+          updated_at = NOW()
       `,
       [
         camera.id,
@@ -82,7 +114,10 @@ async function seedCamerasTable(client: PoolClient) {
         camera.status,
         camera.quality,
         camera.image,
-        camera.streamUrl,
+        encryptedStream.encrypted,
+        encryptedStream.iv,
+        encryptedStream.authTag,
+        encryptedStream.keyVersion,
         camera.description,
         camera.updatedAt,
       ],
